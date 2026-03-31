@@ -1,0 +1,20 @@
+---
+title: "K-DBSCAN"
+author: "Philip Loewen, Arusan Surendiran"
+format: pdf
+---
+
+# Algorithm
+
+```{r}
+
+```
+
+# Simulation
+
+```{r}
+
+```
+
+
+# Analysis
