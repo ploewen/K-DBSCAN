@@ -1,0 +1,260 @@
+---
+title: "DBSCAN"
+author: Philip Loewn, Arusan Surendiran
+format: pdf
+---
+
+# Datasets
+
+
+```{r}
+library(remotes)
+#remotes::install_github("coatless-rpkg/ucimlrepo")
+library(ucimlrepo)
+library(here)
+```
+
+```{r}
+abalone_uci <- fetch_ucirepo(name = "abalone")
+abalone <- abalone_uci$data$original
+```
+
+
+```{r}
+MAGIC_uci <- fetch_ucirepo(id=159)
+magic <- MAGIC_uci$data$original
+```
+
+
+```{r}
+# Load the training data
+# 'shuttle.trn' uses spaces as separators and has no header row
+shuttle_train <- read.table("data/shuttle.trn", header = FALSE, sep = " ")
+
+# Load the test data
+shuttle_test <- read.table("data/shuttle.tst", header = FALSE, sep = " ")
+
+statlog_shuttle <- rbind(shuttle_train, shuttle_test)
+
+# Separate features from labels
+# The last column (V10) is the class label
+statlog_features <- statlog_shuttle[, 1:9]
+```
+
+
+
+```{r}
+mocap_hand <- read.csv("data/mocap-hand-postures.csv")
+```
+
+# Algorithm
+
+```{r}
+manual_dbscan <- function(data, eps, minPts) {
+  n <- nrow(data)
+  cluster_assignment <- rep(0, n)  # 0 = unclassified, -1 = noise
+  cluster_id <- 0
+  
+  # Helper to find neighbors
+  get_neighbors <- function(idx) {
+    # Vectorized distance calculation
+    dists <- sqrt(rowSums((sweep(data, 2, as.numeric(data[idx, ])))^2))
+    return(which(dists <= eps))
+  }
+  
+  for (i in 1:n) {
+    # Skip if already processed
+    if (cluster_assignment[i] != 0) next
+    
+    neighbors <- get_neighbors(i)
+    
+    if (length(neighbors) < minPts) {
+      cluster_assignment[i] <- -1 # Mark as noise for now
+    } else {
+      cluster_id <- cluster_id + 1
+      cluster_assignment[i] <- cluster_id
+      
+      # Expand Cluster
+      seeds <- setdiff(neighbors, i)
+      j <- 1
+      while (j <= length(seeds)) {
+        current_p <- seeds[j]
+        
+        # If it was noise, it becomes a border point
+        if (cluster_assignment[current_p] == -1) {
+          cluster_assignment[current_p] <- cluster_id
+        }
+        
+        # If it hasn't been visited, process it
+        if (cluster_assignment[current_p] == 0) {
+          cluster_assignment[current_p] <- cluster_id
+          new_neighbors <- get_neighbors(current_p)
+          
+          if (length(new_neighbors) >= minPts) {
+            # Add new neighbors to the seeds we need to check
+            seeds <- unique(c(seeds, new_neighbors))
+          }
+        }
+        j <- j + 1
+      }
+    }
+  }
+  return(cluster_assignment)
+}
+
+# --- Usage with a subset of scaled Shuttle Data ---
+# scaled_data <- scale(shuttle_train[1:1000, 1:9])
+# results <- manual_dbscan(scaled_data, eps = 0.5, minPts = 5)
+# table(results)
+```
+
+
+# Simulated Data
+
+
+
+
+```{r}
+library(dbscan) # For clustering
+library(ggplot2) # For plotting # graphs made with both ggplot2 and plot
+library(MASS) #
+set.seed(2201)
+# Define the cluster centers and sizes
+centers <- matrix(c(25, 25, -25, -25, 25, -20, -20, 20), ncol = 2, byrow = TRUE) 
+sizes <- c(1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 250, 100)
+
+# Generate synthetic clusters with different characteristics
+cluster1 <- mvrnorm(n = sizes[1], mu = centers[1,], Sigma = matrix(c(9, 2, 2, 9), ncol = 2))
+cluster2 <- mvrnorm(n = sizes[2], mu = centers[2,], Sigma = matrix(c(12, 0.5, 0.5, 4), ncol = 2))
+cluster3 <- mvrnorm(n = sizes[3], mu = centers[3,], Sigma = matrix(c(6, 0.3, 0.3, 18), ncol = 2))
+cluster4 <- mvrnorm(n = sizes[4], mu = centers[4,], Sigma = matrix(c(15, 0.1, 0.1, 15), ncol = 2))
+
+# Cluster 5: Sine curve distribution
+x_values <- seq(-40, -20, length.out = 1000)
+y_values <- sin(x_values) * 2 + rnorm(1000, mean = 0, sd = 0.2) # Adding some noise to the sine curve
+cluster5 <- cbind(x_values, y_values)
+
+# Cluster 6 & 7: Intersecting clusters
+cluster6 <- mvrnorm(n = 1000, mu = c(-5, -5), Sigma = matrix(c(7, 1.3, 1.3, 8), ncol = 2))
+cluster7 <- mvrnorm(n = 1000, mu = c(-3, -7), Sigma = matrix(c(7, 1.3, 1.3, 5), ncol = 2))
+
+# Cluster 8: Points along an arc
+theta <- runif(1000, min = pi, max = 2 * pi)
+r <- 5
+cluster8 <- cbind(r * cos(theta) + 5, r * sin(theta) + 15)
+
+# Cluster 9: Points in a "moon" shape
+theta <- runif(1000, min = 0, max = pi)
+r <- 10 + runif(1000, min = -1, max = 1)
+cluster9 <- cbind(r * cos(theta) + 30, r * sin(theta))
+
+# Cluster 10: Points in a "ring" shape around all other clusters
+theta <- runif(1000, min = 0, max = 2 * pi)
+r_inner <- 48
+r_outer <- 52
+r <- sqrt(runif(1000, min = r_inner^2, max = r_outer^2))
+cluster10 <- cbind(r * cos(theta), r * sin(theta))
+```
+
+
+```{r}
+# Generate noise and outliers within a limited range
+noise <- cbind(runif(sizes[11], min = -60, max = 60), runif(sizes[11], min = -60, max = 60))
+outliers <- cbind(rnorm(sizes[12], mean = 0, sd = 20), rnorm(sizes[12], mean = 0, sd = 20))
+
+# Combine existing clusters with new noise and outliers
+data_full <- rbind(cluster1, cluster2, cluster3, cluster4, cluster5, 
+                   cluster6, cluster7, cluster8, cluster9, cluster10, 
+                   noise, outliers)
+
+
+
+
+# Create a dataframe for plotting
+df_full <- as.data.frame(data_full)
+colnames(df_full) <- c("X", "Y")
+
+# Visualize the raw data before clustering to see the 'fog' of noise
+ggplot(df_full, aes(x = X, y = Y)) +
+  geom_point(alpha = 0.3, size = 0.5) +
+  theme_minimal() +
+  labs(title = "Synthetic Data with Clusters, Noise, and Outliers")
+```
+
+
+```{r}
+# Run manual DBSCAN (Note: This is ~9,700 points, may take ~2-3 mins in R)
+# Try eps = 1.8 and minPts = 10 as a starting point
+results_with_noise <- manual_dbscan(data_full, eps = 2.5, minPts = 4)
+
+# Add results back to dataframe
+df_full$Cluster <- as.factor(results_with_noise)
+```
+
+
+```{r}
+ggplot(df_full, aes(x = X, y = Y, color = Cluster)) +
+  geom_point(alpha = 0.6, size = 0.8) +
+  scale_color_manual(values = c("-1" = "grey70", 
+                                 setNames(scales::hue_pal()(length(unique(results_with_noise))-1), 
+                                          unique(results_with_noise)[unique(results_with_noise) != -1]))) +
+  theme_minimal() +
+  labs(title = "Manual DBSCAN: Noise Separation",
+       subtitle = "Grey points = Noise (Cluster -1)",
+       x = "X", y = "Y") +
+  theme(legend.position = "none") # Hide legend if there are too many clusters
+```
+
+
+
+```{r}
+# 1. Run K-means on the full dataset
+# We'll set centers = 10 to match your original cluster count
+set.seed(123)
+km_result <- kmeans(data_full, centers = 4, nstart = 25)
+
+# 2. Add K-means labels to the dataframe
+df_full$Kmeans_Cluster <- as.factor(km_result$cluster)
+
+# 3. Visualize K-means Results
+ggplot(df_full, aes(x = X, y = Y, color = Kmeans_Cluster)) +
+  geom_point(alpha = 0.5, size = 0.8) +
+  theme_minimal() +
+  scale_color_viridis_d() +
+  labs(title = "K-means Clustering (k = 10)",
+       subtitle = "Notice how noise is forced into clusters and shapes are split",
+       x = "X", y = "Y") +
+  theme(legend.position = "none")
+```
+
+
+
+
+# Application of Algorithm
+
+
+```{r}
+manual_dbscan(data, eps = 0.05, minPts = 4)
+```
+
+
+
+```{r}
+
+colnames(abalone) <- c("Sex", "Length", "Diameter", "Height", "Whole_w", 
+                       "Shucked_w", "Viscera_w", "Shell_w", "Rings")
+
+# Step 1: Remove 'Sex' for clustering or use model.matrix to dummy code it
+# For a manual implementation, let's keep it simple and just use the numeric columns (2:8)
+abalone_numeric <- abalone[, 2:8]
+
+# Step 2: SCALE THE DATA
+# This is non-negotiable for DBSCAN!
+abalone_scaled <- scale(abalone_numeric)
+results <- manual_dbscan(abalone_scaled, eps = 1, minPts = 4)
+
+table(results)
+```
+
+
+
