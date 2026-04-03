@@ -1,124 +1,131 @@
 ---
 title: "DBSCAN"
-author: Philip Loewn, Arusan Surendiran
+author: Philip Loewen, Arusan Surendiran
 format: pdf
 ---
 
+
+
+# DBSCAN Algorithm
+
+This section defines the manual implementation of the DBSCAN algorithm. It utilizes a queue in data structure and a pairwise distance matrix to handle cluster expansion efficiently in R.
+
+https://www.geeksforgeeks.org/dsa/basic-operations-for-queue-in-data-structure/
+
+
+```{r}
+manual_dbscan <- function(data, eps, minPts) {
+  n <- nrow(data)
+  cluster_assignment <- rep(0, n)  # 0 = unvisited, -1 = noise
+  cluster_id <- 0
+  
+  # Compute pairwise Euclidean distances to define epsilon-neighborhoods 
+  dist_mat <- as.matrix(dist(data, method = "euclidean"))
+  
+  for (i in 1:n) {
+    # Skip point if it has already been visited
+    if (cluster_assignment[i] != 0) next
+    
+    # Retrieve the epsilon-neighborhood for point i
+    neighbors <- which(dist_mat[i, ] <= eps)
+    
+    # Check core point condition
+    if (length(neighbors) < minPts) {
+      cluster_assignment[i] <- -1 # Temporarily classify as a noise point
+    } else {
+      # Core point verified: create a new density-based cluster
+      cluster_id <- cluster_id + 1
+      cluster_assignment[i] <- cluster_id
+      
+      # Identify directly density-reachable points to start the chain
+      seeds <- setdiff(neighbors, i)
+      
+      # Initialize a queue to establish density-connected points
+      queue <- integer(n)
+      queue_len <- length(seeds)
+      
+      if (queue_len > 0) {
+        queue[1:queue_len] <- seeds
+      }
+      
+      head <- 1
+      tail <- queue_len
+      
+      # Expand the cluster to satisfy the Maximality requirement
+      while (head <= tail) {
+        current_p <- queue[head]
+        head <- head + 1 
+        
+        # If previously classified as noise, it is a border point
+        if (cluster_assignment[current_p] == -1) {
+          cluster_assignment[current_p] <- cluster_id
+        }
+        
+        # If unvisited, process for density-reachability
+        if (cluster_assignment[current_p] == 0) {
+          cluster_assignment[current_p] <- cluster_id
+          
+          # Retrieve the epsilon-neighborhood of the current point
+          new_neighbors <- which(dist_mat[current_p, ] <= eps)
+          
+          # If this point is also a core point, expand the reachable chain
+          if (length(new_neighbors) >= minPts) {
+            # Extract only unvisited or noise points
+            valid_new <- new_neighbors[cluster_assignment[new_neighbors] <= 0]
+            num_new <- length(valid_new)
+            
+            if (num_new > 0) {
+              queue[(tail + 1):(tail + num_new)] <- valid_new
+              tail <- tail + num_new
+            }
+          }
+        }
+      }
+    }
+  }
+  return(cluster_assignment)
+}
+```
+
 # Datasets
 
+This section handles the retrieval and preprocessing of the real-world datasets from the UCI Machine Learning Repository.
 
 ```{r}
 library(remotes)
 #remotes::install_github("coatless-rpkg/ucimlrepo")
 library(ucimlrepo)
 library(here)
-```
 
-```{r}
+# Abalone Dataset
 abalone_uci <- fetch_ucirepo(name = "abalone")
 abalone <- abalone_uci$data$original
-```
+colnames(abalone) <- c("Sex", "Length", "Diameter", "Height", "Whole_w", 
+                       "Shucked_w", "Viscera_w", "Shell_w", "Rings")
 
+# Prepare and scale Abalone for clustering
+abalone_numeric <- abalone[, 2:8]
+abalone_scaled <- scale(abalone_numeric)
 
-```{r}
+# MAGIC Gamma Telescope Dataset
 MAGIC_uci <- fetch_ucirepo(id=159)
 magic <- MAGIC_uci$data$original
 ```
 
 
-```{r}
-# Load the training data
-# 'shuttle.trn' uses spaces as separators and has no header row
-shuttle_train <- read.table("data/shuttle.trn", header = FALSE, sep = " ")
-
-# Load the test data
-shuttle_test <- read.table("data/shuttle.tst", header = FALSE, sep = " ")
-
-statlog_shuttle <- rbind(shuttle_train, shuttle_test)
-
-# Separate features from labels
-# The last column (V10) is the class label
-statlog_features <- statlog_shuttle[, 1:9]
-```
 
 
+
+# Simulation
+
+The simulation evaluates the algorithm's performance on non-linear geometries (sine curves, rings, and arcs) and its ability to distinguish clusters from background noise. We demonstrate the advantages of DBSCAN clustering in comparison to k-means clustering.
 
 ```{r}
-mocap_hand <- read.csv("data/mocap-hand-postures.csv")
-```
-
-# Algorithm
-
-```{r}
-manual_dbscan <- function(data, eps, minPts) {
-  n <- nrow(data)
-  cluster_assignment <- rep(0, n)  # 0 = unclassified, -1 = noise
-  cluster_id <- 0
-  
-  # Helper to find neighbors
-  get_neighbors <- function(idx) {
-    # Vectorized distance calculation
-    dists <- sqrt(rowSums((sweep(data, 2, as.numeric(data[idx, ])))^2))
-    return(which(dists <= eps))
-  }
-  
-  for (i in 1:n) {
-    # Skip if already processed
-    if (cluster_assignment[i] != 0) next
-    
-    neighbors <- get_neighbors(i)
-    
-    if (length(neighbors) < minPts) {
-      cluster_assignment[i] <- -1 # Mark as noise for now
-    } else {
-      cluster_id <- cluster_id + 1
-      cluster_assignment[i] <- cluster_id
-      
-      # Expand Cluster
-      seeds <- setdiff(neighbors, i)
-      j <- 1
-      while (j <= length(seeds)) {
-        current_p <- seeds[j]
-        
-        # If it was noise, it becomes a border point
-        if (cluster_assignment[current_p] == -1) {
-          cluster_assignment[current_p] <- cluster_id
-        }
-        
-        # If it hasn't been visited, process it
-        if (cluster_assignment[current_p] == 0) {
-          cluster_assignment[current_p] <- cluster_id
-          new_neighbors <- get_neighbors(current_p)
-          
-          if (length(new_neighbors) >= minPts) {
-            # Add new neighbors to the seeds we need to check
-            seeds <- unique(c(seeds, new_neighbors))
-          }
-        }
-        j <- j + 1
-      }
-    }
-  }
-  return(cluster_assignment)
-}
-
-# --- Usage with a subset of scaled Shuttle Data ---
-# scaled_data <- scale(shuttle_train[1:1000, 1:9])
-# results <- manual_dbscan(scaled_data, eps = 0.5, minPts = 5)
-# table(results)
-```
-
-
-# Simulated Data
-
-
-
-
-```{r}
-library(dbscan) # For clustering
-library(ggplot2) # For plotting # graphs made with both ggplot2 and plot
-library(MASS) #
+library(dbscan)
+library(ggplot2)
+library(MASS)
 set.seed(2201)
+
 # Define the cluster centers and sizes
 centers <- matrix(c(25, 25, -25, -25, 25, -20, -20, 20), ncol = 2, byrow = TRUE) 
 sizes <- c(1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 250, 100)
@@ -154,78 +161,55 @@ r_inner <- 48
 r_outer <- 52
 r <- sqrt(runif(1000, min = r_inner^2, max = r_outer^2))
 cluster10 <- cbind(r * cos(theta), r * sin(theta))
-```
 
+# Noise and Outliers
+noise <- cbind(runif(250, -60, 60), runif(250, -60, 60))
+outliers <- cbind(rnorm(100, 0, 20), rnorm(100, 0, 20))
 
-```{r}
-# Generate noise and outliers within a limited range
-noise <- cbind(runif(sizes[11], min = -60, max = 60), runif(sizes[11], min = -60, max = 60))
-outliers <- cbind(rnorm(sizes[12], mean = 0, sd = 20), rnorm(sizes[12], mean = 0, sd = 20))
-
-# Combine existing clusters with new noise and outliers
 data_full <- rbind(cluster1, cluster2, cluster3, cluster4, cluster5, 
-                   cluster6, cluster7, cluster8, cluster9, cluster10, 
-                   noise, outliers)
-
-
-
-
-# Create a dataframe for plotting
+                   cluster6, cluster7, cluster8, cluster9, cluster10, noise, outliers)
 df_full <- as.data.frame(data_full)
 colnames(df_full) <- c("X", "Y")
-
-# Visualize the raw data before clustering to see the 'fog' of noise
-ggplot(df_full, aes(x = X, y = Y)) +
-  geom_point(alpha = 0.3, size = 0.5) +
-  theme_minimal() +
-  labs(title = "Synthetic Data with Clusters, Noise, and Outliers")
 ```
 
 
-```{r}
-# Run manual DBSCAN (Note: This is ~9,700 points, may take ~2-3 mins in R)
-# Try eps = 1.8 and minPts = 10 as a starting point
-results_with_noise <- manual_dbscan(data_full, eps = 2.5, minPts = 4)
+## Execution and Comparison
 
-# Add results back to dataframe
-df_full$Cluster <- as.factor(results_with_noise)
+```{r}
+set.seed(2201)
+# Run Manual DBSCAN
+results_dbscan <- manual_dbscan(df_full, eps = 2.5, minPts = 4)
+df_full$Cluster <- as.factor(results_dbscan)
+
+# Run K-means for Comparison
+km_result <- kmeans(df_full, centers = 4, nstart = 25)
+df_full$Kmeans_Cluster <- as.factor(km_result$cluster)
 ```
 
 
+
+## Visualization
+
 ```{r}
+# DBSCAN Results
 ggplot(df_full, aes(x = X, y = Y, color = Cluster)) +
   geom_point(alpha = 0.6, size = 0.8) +
   scale_color_manual(values = c("-1" = "grey70", 
-                                 setNames(scales::hue_pal()(length(unique(results_with_noise))-1), 
-                                          unique(results_with_noise)[unique(results_with_noise) != -1]))) +
+                                setNames(scales::hue_pal()(length(unique(results_dbscan))-1), 
+                                         unique(results_dbscan)[unique(results_dbscan) != -1]))) +
   theme_minimal() +
-  labs(title = "Manual DBSCAN: Noise Separation",
-       subtitle = "Grey points = Noise (Cluster -1)",
-       x = "X", y = "Y") +
-  theme(legend.position = "none") # Hide legend if there are too many clusters
-```
+  labs(title = "Manual DBSCAN", subtitle = "Grey = Noise (-1)") +
+  theme(legend.position = "none")
 
-
-
-```{r}
-# 1. Run K-means on the full dataset
-# We'll set centers = 10 to match your original cluster count
-set.seed(123)
-km_result <- kmeans(data_full, centers = 4, nstart = 25)
-
-# 2. Add K-means labels to the dataframe
-df_full$Kmeans_Cluster <- as.factor(km_result$cluster)
-
-# 3. Visualize K-means Results
+# K-means Results
 ggplot(df_full, aes(x = X, y = Y, color = Kmeans_Cluster)) +
   geom_point(alpha = 0.5, size = 0.8) +
   theme_minimal() +
   scale_color_viridis_d() +
-  labs(title = "K-means Clustering (k = 10)",
-       subtitle = "Notice how noise is forced into clusters and shapes are split",
-       x = "X", y = "Y") +
+  labs(title = "K-means Comparison", subtitle = "Note: Noise forced into clusters") +
   theme(legend.position = "none")
 ```
+
 
 
 
@@ -234,12 +218,15 @@ ggplot(df_full, aes(x = X, y = Y, color = Kmeans_Cluster)) +
 
 
 ```{r}
+#| include: false
+#| eval: false
 manual_dbscan(data, eps = 0.05, minPts = 4)
 ```
 
 
-
 ```{r}
+#| include: false
+#| eval: false
 
 colnames(abalone) <- c("Sex", "Length", "Diameter", "Height", "Whole_w", 
                        "Shucked_w", "Viscera_w", "Shell_w", "Rings")
