@@ -1,5 +1,5 @@
 ---
-title: "DBSCAN"
+title: "K-DBSCAN"
 author: Philip Loewen, Arusan Surendiran
 format: pdf
 ---
@@ -182,7 +182,7 @@ results_dbscan <- manual_dbscan(df_full, eps = 2.5, minPts = 4)
 df_full$Cluster <- as.factor(results_dbscan)
 
 # Run K-means for Comparison
-km_result <- kmeans(df_full, centers = 4, nstart = 25)
+km_result <- kmeans(df_full, centers = 10, nstart = 25)
 df_full$Kmeans_Cluster <- as.factor(km_result$cluster)
 ```
 
@@ -205,7 +205,9 @@ ggplot(df_full, aes(x = X, y = Y, color = Cluster)) +
 ggplot(df_full, aes(x = X, y = Y, color = Kmeans_Cluster)) +
   geom_point(alpha = 0.5, size = 0.8) +
   theme_minimal() +
-  scale_color_viridis_d() +
+  scale_color_manual(values = c("-1" = "grey70", 
+                                setNames(scales::hue_pal()(length(unique(km_result))-1), 
+                                         unique(km_result)[unique(km_result) != -1]))) +
   labs(title = "K-means Comparison", subtitle = "Note: Noise forced into clusters") +
   theme(legend.position = "none")
 ```
@@ -240,8 +242,306 @@ abalone_numeric <- abalone[, 2:8]
 abalone_scaled <- scale(abalone_numeric)
 results <- manual_dbscan(abalone_scaled, eps = 1, minPts = 4)
 
-table(results)
+print(table(results))
 ```
 
 
+# K-means++ Algorithm
+
+K-means++ improves upon the standard k-means algorithm by providing a specific method for choosing initial cluster centers. Standard k-means often relies on random initialization, which can lead to poor local optima. The k-means++ approach spreads out the initial centers before starting the iterative assignment and update steps.
+
+## Implementation
+
+The following implementation includes the probabilistic seeding process and the iterative refinement loop.
+
+```{r}
+# Function to compute Euclidean distance between a point and a set of centers
+get_min_dist_sq <- function(data, centers) {
+  # Calculate squared distances from each point to the nearest existing center
+  apply(data, 1, function(point) {
+    min(colSums((t(centers) - point)^2))
+  })
+}
+
+manual_kmeans_pp <- function(data, k, max_iter = 100) {
+  data_mat <- as.matrix(data)
+  n <- nrow(data_mat)
+  
+  # --- Step 1: K-means++ Seeding ---
+  
+  # Choose the first center uniformly at random
+  centers <- matrix(NA, nrow = k, ncol = ncol(data_mat))
+  centers[1, ] <- data_mat[sample(1:n, 1), ]
+  
+  if (k > 1) {
+    for (i in 2:k) {
+      # Compute squared distances to the nearest center already chosen
+      dist_sq <- get_min_dist_sq(data_mat, centers[1:(i-1), , drop = FALSE])
+      
+      # Select next center with probability proportional to D(x)^2
+      # This ensures centers are spread out across the feature space
+      probs <- dist_sq / sum(dist_sq)
+      next_idx <- sample(1:n, 1, prob = probs)
+      centers[i, ] <- data_mat[next_idx, ]
+    }
+  }
+  
+  # --- Step 2: Standard K-means Iteration ---
+  
+  assignments <- rep(0, n)
+  prev_assignments <- rep(-1, n)
+  iter <- 0
+  
+  while (!all(assignments == prev_assignments) && iter < max_iter) {
+    prev_assignments <- assignments
+    iter <- iter + 1
+    
+    # Assignment Step: Assign each point to the nearest center
+    dist_to_centers <- as.matrix(dist(rbind(centers, data_mat)))
+    # Extract distances between points and centers only
+    dist_matrix <- dist_to_centers[(k + 1):(n + k), 1:k]
+    assignments <- apply(dist_matrix, 1, which.min)
+    
+    # Update Step: Recompute centers as the mean of assigned points
+    for (j in 1:k) {
+      if (sum(assignments == j) > 0) {
+        centers[j, ] <- colMeans(data_mat[assignments == j, , drop = FALSE])
+      }
+    }
+  }
+  
+  return(list(cluster = assignments, centers = centers, iterations = iter))
+}
+```
+
+## Simulation and Evaluation
+
+We reuse the previous synthetic dataset to evaluate how effectively k-means++ identifies the underlying structure.
+
+```{r}
+set.seed(2201)
+# Run Manual K-means++
+# We choose k=10 to match the number of intended clusters in the generation
+k_clusters <- 10
+results_kmpp <- manual_kmeans_pp(df_full[, c("X", "Y")], k = k_clusters)
+df_full$Kmpp_Cluster <- as.factor(results_kmpp$cluster)
+```
+
+## Visualization
+
+The plot below displays the final cluster assignments. The larger black points represent the final centroids calculated by the algorithm.
+
+```{r}
+# Kmpp-means Results
+ggplot(df_full, aes(x = X, y = Y, color = Kmpp_Cluster)) +
+  geom_point(alpha = 0.5, size = 0.8) +
+  theme_minimal() +
+  scale_color_manual(values = c("-1" = "grey70", 
+                                setNames(scales::hue_pal()(length(unique(results_kmpp))-1), 
+                                         unique(results_kmpp)[unique(results_kmpp) != -1]))) +
+  labs(title = "K-means++ Comparison", subtitle = "Note: Noise forced into clusters") +
+  theme(legend.position = "none")
+```
+
+## Application to Abalone dataset
+
+This section applies the k-means++ implementation to the numeric features of the Abalone dataset.
+
+```{r}
+# Assuming the 'abalone_scaled' object exists from previous preprocessing
+# If not, ensure the data is loaded and scaled as shown in the DBSCAN section.
+if (exists("abalone_scaled")) {
+  abalone_results <- manual_kmeans_pp(abalone_scaled, k = 3)
+  table(abalone_results$cluster)
+} else {
+  print("Scaled Abalone data not found. Please run the preprocessing steps.")
+}
+```
+# K-DBSCAN Algorithm
+
+The primary goal of the K-DBSCAN hybrid approach is to process data in localized segments and then unify density-connected clusters that cross the boundaries of those segments. By partitioning the space with K-means, the algorithm only performs exhaustive distance checks between points within the same group or between adjacent groups. 
+
+## Implementation
+
+The following implementation integrates the \texttt{manual_dbscan} and \texttt{manual_kmeans_pp} methods.
+
+```{r}
+single_link_dist <- function(clu_1, clu_2) {
+  clu_1 <- as.matrix(clu_1)
+  clu_2 <- as.matrix(clu_2)
+
+  if (nrow(clu_1) == 0 || nrow(clu_2) == 0) {
+    return(Inf)
+  }
+
+  dist_mat <- as.matrix(dist(rbind(clu_1, clu_2)))
+  n1 <- nrow(clu_1)
+  n2 <- nrow(clu_2)
+  return(min(dist_mat[1:n1, (n1 + 1):(n1 + n2), drop = FALSE]))
+}
+
+cluster_dist <- function(clu_1, clu_2) {
+  clu_1 <- as.matrix(clu_1)
+  clu_2 <- as.matrix(clu_2)
+
+  if (nrow(clu_1) == 0 || nrow(clu_2) == 0) {
+    return(Inf)
+  }
+
+  center_1 <- colMeans(clu_1)
+  center_2 <- colMeans(clu_2)
+
+  dis_KCij <- sqrt(sum((center_1 - center_2)^2))
+  dis_ri <- max(sqrt(rowSums((clu_1 - matrix(center_1, nrow = nrow(clu_1), ncol = ncol(clu_1), byrow = TRUE))^2)))
+  dis_rj <- max(sqrt(rowSums((clu_2 - matrix(center_2, nrow = nrow(clu_2), ncol = ncol(clu_2), byrow = TRUE))^2)))
+
+  return(dis_KCij - dis_ri - dis_rj)
+}
+
+
+find_uf <- function(parent, x) {
+  while (parent[x] != x) {
+    x <- parent[x]
+  }
+  return(x)
+}
+
+union_uf <- function(parent, x, y) {
+  rx <- find_uf(parent, x)
+  ry <- find_uf(parent, y)
+  if (rx != ry) parent[rx] <- ry
+  return(parent)
+}
+
+k_dbscan <- function(D, k, max_iter, eps, minPts) {
+  # Step 1: Normalization of D
+  D_mat <- as.matrix(scale(D))
+  n <- nrow(D_mat)
+
+  if (n == 0) {
+    return(integer(0))
+  }
+
+  # Step 2: Data grouping with K-means Algorithm
+  km_results <- manual_kmeans_pp(D_mat, k = k, max_iter = max_iter)
+  group_id <- km_results$cluster
+
+  # Step 3: Run DBSCAN inside each K-means group
+  group_points <- vector("list", k)
+  group_clusters <- vector("list", k)
+  numclu <- integer(k)
+  group_centers <- matrix(NA_real_, nrow = k, ncol = ncol(D_mat))
+
+  for (i in seq_len(k)) {
+    group_idx <- which(group_id == i)
+    if (length(group_idx) == 0) {
+      group_points[[i]] <- list()
+      group_clusters[[i]] <- integer(0)
+      next
+    }
+
+    group_centers[i, ] <- colMeans(D_mat[group_idx, , drop = FALSE])
+    group_data <- D_mat[group_idx, , drop = FALSE]
+    local_labels <- manual_dbscan(group_data, eps, minPts)
+    local_cluster_ids <- sort(unique(local_labels[local_labels > 0]))
+
+    numclu[i] <- length(local_cluster_ids)
+    group_points[[i]] <- lapply(local_cluster_ids, function(local_cluster) {
+      group_idx[local_labels == local_cluster]
+    })
+    group_clusters[[i]] <- rep(0L, numclu[i])
+  }
+
+  # Step 4: Merge border clusters
+  # total number of sub-clusters across all groups
+  total_subclu <- sum(numclu)
+  
+  # build a flat index: which group and local index does sub-cluster s belong to?
+  # sub_id[g][c] gives the global sub-cluster index for group g, local cluster c
+  sub_id <- vector("list", k)
+  counter <- 0L
+  for (g in seq_len(k)) {
+    sub_id[[g]] <- integer(numclu[g])
+    for (c in seq_len(numclu[g])) {
+      counter <- counter + 1L
+      sub_id[[g]][c] <- counter
+    }
+  }
+  
+  parent <- seq_len(total_subclu)
+  
+  # merge border clusters
+  if (k > 1) {
+    for (a in seq_len(k - 1L)) {
+      for (b in (a + 1L):k) {
+        if (numclu[a] == 0L || numclu[b] == 0L) next
+  
+        dis_k <- cluster_dist(D_mat[group_id == a, , drop = FALSE],
+                              D_mat[group_id == b, , drop = FALSE])
+        if (dis_k >= eps) next
+  
+        for (c in seq_len(numclu[a])) {
+          for (d in seq_len(numclu[b])) {
+            dis_db <- single_link_dist(
+              D_mat[group_points[[a]][[c]], , drop = FALSE],
+              D_mat[group_points[[b]][[d]], , drop = FALSE]
+            )
+            if (dis_db <= eps) {
+              parent <- union_uf(parent, sub_id[[a]][c], sub_id[[b]][d])
+            }
+          }
+        }
+      }
+    }
+  }
+
+  # Step 5: Run DBSCAN again inside each flagged component
+  # find unique components by their root
+  all_roots <- unique(vapply(seq_len(total_subclu), find_uf, integer(1), parent = parent))
+  
+  final_labels <- rep(-1L, n)
+  final_cluster_id <- 0L
+  
+  for (root in all_roots) {
+    # collect all original points belonging to this component
+    component_points <- integer(0)
+  
+    for (g in seq_len(k)) {
+      for (c in seq_len(numclu[g])) {
+        if (find_uf(parent, sub_id[[g]][c]) == root) {
+          component_points <- c(component_points, group_points[[g]][[c]])
+        }
+      }
+    }
+  
+    component_points <- sort(unique(component_points))
+    if (length(component_points) == 0) next
+  
+    flagged_data <- D_mat[component_points, , drop = FALSE]
+    flagged_result <- manual_dbscan(flagged_data, eps, minPts)
+  
+    for (local_cluster in sort(unique(flagged_result[flagged_result > 0]))) {
+      final_cluster_id <- final_cluster_id + 1L
+      final_labels[component_points[flagged_result == local_cluster]] <- final_cluster_id
+    }
+  }
+  
+  return(final_labels)
+}
+```
+
+
+```{r}
+results_kdbscan <- k_dbscan(df_full[, c("X", "Y")], 10, 4, 0.1, 4)
+df_full$kdbs_cluster <- factor(results_kdbscan)
+
+ggplot(df_full, aes(x = X, y = Y, color = kdbs_cluster)) +
+  geom_point(size = 0.5, alpha = 0.7) +
+  scale_color_manual(
+    values = c("-1" = "grey80", setNames(hcl.colors(length(unique(results_kdbscan[results_kdbscan > 0])), "Set2"),
+                                         as.character(sort(unique(results_kdbscan[results_kdbscan > 0])))))
+  ) +
+  labs(title = "K-DBSCAN clustering", color = "Cluster") +
+  theme_minimal()
+```
 
