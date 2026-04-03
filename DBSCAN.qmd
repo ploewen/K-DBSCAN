@@ -398,21 +398,6 @@ cluster_dist <- function(clu_1, clu_2) {
   return(dis_KCij - dis_ri - dis_rj)
 }
 
-
-find_uf <- function(parent, x) {
-  while (parent[x] != x) {
-    x <- parent[x]
-  }
-  return(x)
-}
-
-union_uf <- function(parent, x, y) {
-  rx <- find_uf(parent, x)
-  ry <- find_uf(parent, y)
-  if (rx != ry) parent[rx] <- ry
-  return(parent)
-}
-
 k_dbscan <- function(D, k, max_iter, eps, minPts) {
   # Step 1: Normalization of D
   D_mat <- as.matrix(scale(D))
@@ -428,19 +413,15 @@ k_dbscan <- function(D, k, max_iter, eps, minPts) {
 
   # Step 3: Run DBSCAN inside each K-means group
   group_points <- vector("list", k)
-  group_clusters <- vector("list", k)
   numclu <- integer(k)
-  group_centers <- matrix(NA_real_, nrow = k, ncol = ncol(D_mat))
 
   for (i in seq_len(k)) {
     group_idx <- which(group_id == i)
     if (length(group_idx) == 0) {
       group_points[[i]] <- list()
-      group_clusters[[i]] <- integer(0)
       next
     }
 
-    group_centers[i, ] <- colMeans(D_mat[group_idx, , drop = FALSE])
     group_data <- D_mat[group_idx, , drop = FALSE]
     local_labels <- manual_dbscan(group_data, eps, minPts)
     local_cluster_ids <- sort(unique(local_labels[local_labels > 0]))
@@ -449,45 +430,40 @@ k_dbscan <- function(D, k, max_iter, eps, minPts) {
     group_points[[i]] <- lapply(local_cluster_ids, function(local_cluster) {
       group_idx[local_labels == local_cluster]
     })
-    group_clusters[[i]] <- rep(0L, numclu[i])
   }
 
   # Step 4: Merge border clusters
-  # total number of sub-clusters across all groups
-  total_subclu <- sum(numclu)
-  
-  # build a flat index: which group and local index does sub-cluster s belong to?
-  # sub_id[g][c] gives the global sub-cluster index for group g, local cluster c
-  sub_id <- vector("list", k)
-  counter <- 0L
-  for (g in seq_len(k)) {
-    sub_id[[g]] <- integer(numclu[g])
-    for (c in seq_len(numclu[g])) {
-      counter <- counter + 1L
-      sub_id[[g]][c] <- counter
-    }
+  flag <- vector("list", k)
+  for (i in seq_len(k)) {
+    flag[[i]] <- rep(0L, numclu[i])
   }
-  
-  parent <- seq_len(total_subclu)
-  
-  # merge border clusters
-  if (k > 1) {
-    for (a in seq_len(k - 1L)) {
-      for (b in (a + 1L):k) {
-        if (numclu[a] == 0L || numclu[b] == 0L) next
-  
-        dis_k <- cluster_dist(D_mat[group_id == a, , drop = FALSE],
-                              D_mat[group_id == b, , drop = FALSE])
-        if (dis_k >= eps) next
-  
-        for (c in seq_len(numclu[a])) {
-          for (d in seq_len(numclu[b])) {
-            dis_db <- single_link_dist(
-              D_mat[group_points[[a]][[c]], , drop = FALSE],
-              D_mat[group_points[[b]][[d]], , drop = FALSE]
-            )
-            if (dis_db <= eps) {
-              parent <- union_uf(parent, sub_id[[a]][c], sub_id[[b]][d])
+
+  counter <- 1L
+
+  for (a in seq_len(k - 1L)) {
+    for (b in seq_len(k)) {
+      if (numclu[a] == 0L || numclu[b] == 0L) next
+
+      dis_k <- cluster_dist(D_mat[group_id == a, , drop = FALSE],
+                            D_mat[group_id == b, , drop = FALSE])
+      if (dis_k > eps) next
+
+      for (c in seq_len(numclu[a])) {
+        for (d in seq_len(numclu[b])) {
+          dis_db <- single_link_dist(
+            D_mat[group_points[[a]][[c]], , drop = FALSE],
+            D_mat[group_points[[b]][[d]], , drop = FALSE]
+          )
+
+          if (dis_db <= eps) {
+            if (flag[[a]][c] == 0L && flag[[b]][d] == 0L) {
+              flag[[a]][c] <- counter
+              flag[[b]][d] <- counter
+              counter <- counter + 1L
+            } else {
+              new_flag <- max(flag[[a]][c], flag[[b]][d])
+              flag[[a]][c] <- new_flag
+              flag[[b]][d] <- new_flag
             }
           }
         }
@@ -495,53 +471,64 @@ k_dbscan <- function(D, k, max_iter, eps, minPts) {
     }
   }
 
+  for (i in seq_len(k)) {
+    if (numclu[i] == 0L) next
+    for (c in seq_len(numclu[i])) {
+      if (flag[[i]][c] == 0L) {
+        flag[[i]][c] <- counter
+        counter <- counter + 1L
+      }
+    }
+  }
+
   # Step 5: Run DBSCAN again inside each flagged component
-  # find unique components by their root
-  all_roots <- unique(vapply(seq_len(total_subclu), find_uf, integer(1), parent = parent))
-  
   final_labels <- rep(-1L, n)
   final_cluster_id <- 0L
-  
-  for (root in all_roots) {
-    # collect all original points belonging to this component
+
+  for (i in seq_len(counter - 1L)) {
     component_points <- integer(0)
-  
+
     for (g in seq_len(k)) {
+      if (numclu[g] == 0L) next
       for (c in seq_len(numclu[g])) {
-        if (find_uf(parent, sub_id[[g]][c]) == root) {
+        if (flag[[g]][c] == i) {
           component_points <- c(component_points, group_points[[g]][[c]])
         }
       }
     }
-  
+
     component_points <- sort(unique(component_points))
     if (length(component_points) == 0) next
-  
+
     flagged_data <- D_mat[component_points, , drop = FALSE]
     flagged_result <- manual_dbscan(flagged_data, eps, minPts)
-  
+
     for (local_cluster in sort(unique(flagged_result[flagged_result > 0]))) {
       final_cluster_id <- final_cluster_id + 1L
       final_labels[component_points[flagged_result == local_cluster]] <- final_cluster_id
     }
   }
-  
+
   return(final_labels)
 }
 ```
 
 
 ```{r}
-results_kdbscan <- k_dbscan(df_full[, c("X", "Y")], 10, 4, 0.1, 4)
+results_kdbscan <- k_dbscan(df_full[, c("X", "Y")], 10, 4, 0.12, 5)
 df_full$kdbs_cluster <- factor(results_kdbscan)
+
+real_clusters <- sort(unique(results_kdbscan[results_kdbscan > 0]))
 
 ggplot(df_full, aes(x = X, y = Y, color = kdbs_cluster)) +
   geom_point(size = 0.5, alpha = 0.7) +
   scale_color_manual(
-    values = c("-1" = "grey80", setNames(hcl.colors(length(unique(results_kdbscan[results_kdbscan > 0])), "Set2"),
-                                         as.character(sort(unique(results_kdbscan[results_kdbscan > 0])))))
+    values = c("-1" = "grey70",
+               setNames(scales::hue_pal()(length(real_clusters)),
+                        as.character(real_clusters)))
   ) +
-  labs(title = "K-DBSCAN clustering", color = "Cluster") +
-  theme_minimal()
+  labs(title = "K-DBSCAN clustering", subtitle = "Grey = Noise (-1)") +
+  theme_minimal() +
+  theme(legend.position = "none")
 ```
 
