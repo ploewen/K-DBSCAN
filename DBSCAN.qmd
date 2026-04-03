@@ -110,9 +110,17 @@ abalone_scaled <- scale(abalone_numeric)
 # MAGIC Gamma Telescope Dataset
 MAGIC_uci <- fetch_ucirepo(id=159)
 magic <- MAGIC_uci$data$original
+
+
+# Shuttle Data
+
+shuttle_train <- read.table("data/shuttle.trn", header = FALSE, sep = " ")
+shuttle_test <- read.table("data/shuttle.tst", header = FALSE, sep = " ")
+statlog_shuttle <- rbind(shuttle_train, shuttle_test)
+
+# Separate features from labels, the last column (V10) is the class label
+statlog_features <- statlog_shuttle[, 1:9]
 ```
-
-
 
 
 
