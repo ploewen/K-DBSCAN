@@ -1,16 +1,14 @@
 ---
-title: "K-DBSCAN"
+title: "Analysis of the DBSCAN and K-DBSCAN Algorithms"
 author: Philip Loewen, Arusan Surendiran
+abstract: |
+  This report provides fully reproducible code for the DBSCAN and K-DBSCAN analysis. It includes the manual implementations of the algorithms, how the simulated datasets were created, and the comparisons for execution time and clustering quality (DB and SI metrics). The document includes all figures and tables used in the final report.
 format: pdf
 ---
 
-
-
 # DBSCAN Algorithm
 
-This section defines the manual implementation of the DBSCAN algorithm. It utilizes a queue in data structure and a pairwise distance matrix to handle cluster expansion efficiently in R.
-
-https://www.geeksforgeeks.org/dsa/basic-operations-for-queue-in-data-structure/
+This section defines the manual implementation of the DBSCAN algorithm. It utilizes a [queue in data structure](https://www.geeksforgeeks.org/dsa/basic-operations-for-queue-in-data-structure/) and a pairwise distance matrix to handle cluster expansion efficiently in R.
 
 
 ```{r}
@@ -87,77 +85,33 @@ manual_dbscan <- function(data, eps, minPts) {
 }
 ```
 
-# Datasets
 
-This section handles the retrieval and preprocessing of the real-world datasets from the UCI Machine Learning Repository.
+# Simulation of Datasets
 
-```{r}
-library(remotes)
-#remotes::install_github("coatless-rpkg/ucimlrepo")
-library(ucimlrepo)
-library(here)
-
-# Abalone Dataset
-abalone_uci <- fetch_ucirepo(name = "abalone")
-abalone <- abalone_uci$data$original
-
-# Prepare and scale Abalone for clustering
-abalone_numeric <- abalone[, 2:8]
-abalone_features <- scale(abalone_numeric)
-
-# MAGIC Gamma Telescope Dataset
-MAGIC_uci <- fetch_ucirepo(id=159)
-magic <- MAGIC_uci$data$original
-
-# Prepare and scale Abalone for clustering
-magic_unscaled <- magic[, 1:10]
-magic_features <- scale(magic_unscaled)
-
-# Shuttle Data
-
-shuttle_train <- read.table("data/shuttle.trn", header = FALSE, sep = " ")
-shuttle_test <- read.table("data/shuttle.tst", header = FALSE, sep = " ")
-statlog_shuttle <- rbind(shuttle_train, shuttle_test)
-
-# Separate features from labels, the last column (V10) is the class label
-shuttle_unscaled <- statlog_shuttle[, 1:9]
-shuttle_features <- scale(shuttle_unscaled)
-
-# MoCap Hand postures Data
-mocap <- read.csv("data/mocap-hand-postures.csv")
-mocap_unscaled <- mocap[, 3:11]
-mocap_features <- scale(mocap_unscaled)
-```
-
-
-
-# Simulation
-
-The simulation evaluates the algorithm's performance on non-linear geometries (sine curves, rings, and arcs) and its ability to distinguish clusters from background noise. We demonstrate the advantages of DBSCAN clustering in comparison to k-means clustering.
+The simulation evaluates the algorithm's performance on non-linear geometries (sine curves, rings, and arcs) and its ability to distinguish clusters from background noise (Kuchciak, 2024). We demonstrate the advantages of DBSCAN clustering in comparison to k-means clustering.
 
 ```{r}
 library(dbscan)
 library(ggplot2)
 library(MASS)
+
 set.seed(2201)
 
 # Define the cluster centers and sizes
-centers <- matrix(c(25, 25, -25, -25, 25, -20, -20, 20), ncol = 2, byrow = TRUE) 
-sizes <- c(1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 250, 100)
+centers <- matrix(c(25, 25, -25, -25, 25, -20, -20, 20, -3, -7), ncol = 2, byrow = TRUE) 
+size <- 1000
 
 # Generate synthetic clusters with different characteristics
-cluster1 <- mvrnorm(n = sizes[1], mu = centers[1,], Sigma = matrix(c(9, 2, 2, 9), ncol = 2))
-cluster2 <- mvrnorm(n = sizes[2], mu = centers[2,], Sigma = matrix(c(12, 0.5, 0.5, 4), ncol = 2))
-cluster3 <- mvrnorm(n = sizes[3], mu = centers[3,], Sigma = matrix(c(6, 0.3, 0.3, 18), ncol = 2))
-cluster4 <- mvrnorm(n = sizes[4], mu = centers[4,], Sigma = matrix(c(15, 0.1, 0.1, 15), ncol = 2))
+cluster1 <- mvrnorm(n = size, mu = centers[1,], Sigma = matrix(c(9, 2, 2, 9), ncol = 2))
+cluster2 <- mvrnorm(n = size, mu = centers[2,], Sigma = matrix(c(12, 0.5, 0.5, 4), ncol = 2))
+cluster3 <- mvrnorm(n = size, mu = centers[3,], Sigma = matrix(c(6, 0.3, 0.3, 18), ncol = 2))
+cluster4 <- mvrnorm(n = size, mu = centers[4,], Sigma = matrix(c(15, 0.1, 0.1, 15), ncol = 2))
+cluster5 <- mvrnorm(n = size, mu = centers[5,], Sigma = matrix(c(7, 1.3, 1.3, 5), ncol = 2))
 
-# Cluster 5: Sine curve distribution
+# Cluster 6: Sine curve distribution
 x_values <- seq(-40, -20, length.out = 1000)
 y_values <- sin(x_values) * 2 + rnorm(1000, mean = 0, sd = 0.2) # Adding some noise to the sine curve
-cluster5 <- cbind(x_values, y_values)
-
-# Cluster 6: Cluster
-cluster6 <- mvrnorm(n = 1000, mu = c(-3, -7), Sigma = matrix(c(7, 1.3, 1.3, 5), ncol = 2))
+cluster6 <- cbind(x_values, y_values)
 
 # Cluster 7: Points along an arc
 theta <- runif(1000, min = pi, max = 2 * pi)
@@ -191,21 +145,23 @@ colnames(df_full) <- c("X", "Y")
 
 ```{r}
 set.seed(2201)
+
 # Run Manual DBSCAN
 results_dbscan <- manual_dbscan(df_full, eps = 2.5, minPts = 4)
 df_full$Cluster <- as.factor(results_dbscan)
+```
 
+
+```{r}
 # Run K-means for Comparison
 km_result <- kmeans(df_full, centers = 10, nstart = 25)
 df_full$Kmeans_Cluster <- as.factor(km_result$cluster)
 ```
 
 
-
 ## Visualization
 
 ```{r}
-
 # Extract unique clusters excluding the noise (-1)
 db_clusters <- unique(results_dbscan[results_dbscan != -1])
 db_colors <- setNames(scales::hue_pal()(length(db_clusters)), db_clusters)
@@ -228,38 +184,8 @@ ggplot(df_full, aes(x = X, y = Y, color = Kmeans_Cluster)) +
   theme(legend.position = "none")
 ```
 
+The comparison above highlights the advantages of DBSCAN. It identified clusters of arbitrary shape and isolated noise points. In contrast, standard K-means forces noise into the nearest cluster, distorting the centroids and the overall structure of the data. K-means also notably did not pick up the shape of the elliptical ring around the other clusters.
 
-
-
-
-# Application of Algorithm
-
-
-```{r}
-#| include: false
-#| eval: false
-manual_dbscan(data, eps = 0.05, minPts = 4)
-```
-
-
-```{r}
-#| include: false
-#| eval: false
-
-colnames(abalone) <- c("Sex", "Length", "Diameter", "Height", "Whole_w", 
-                       "Shucked_w", "Viscera_w", "Shell_w", "Rings")
-
-# Step 1: Remove 'Sex' for clustering or use model.matrix to dummy code it
-# For a manual implementation, let's keep it simple and just use the numeric columns (2:8)
-abalone_numeric <- abalone[, 2:8]
-
-# Step 2: SCALE THE DATA
-# This is non-negotiable for DBSCAN!
-abalone_scaled <- scale(abalone_numeric)
-results <- manual_dbscan(abalone_scaled, eps = 1, minPts = 4)
-
-print(table(results))
-```
 
 
 # K-means++ Algorithm
@@ -336,6 +262,7 @@ We reuse the previous synthetic dataset to evaluate how effectively k-means++ id
 
 ```{r}
 #| cache: true
+
 set.seed(2201)
 # Run Manual K-means++
 # We choose k=10 to match the number of intended clusters in the generation
@@ -362,20 +289,6 @@ ggplot(df_full, aes(x = X, y = Y, color = Kmpp_Cluster)) +
   theme(legend.position = "none")
 ```
 
-## Application to Abalone dataset
-
-This section applies the k-means++ implementation to the numeric features of the Abalone dataset.
-
-```{r}
-# Assuming the 'abalone_scaled' object exists from previous preprocessing
-# If not, ensure the data is loaded and scaled as shown in the DBSCAN section.
-if (exists("abalone_scaled")) {
-  abalone_results <- manual_kmeans_pp(abalone_scaled, k = 3)
-  table(abalone_results$cluster)
-} else {
-  print("Scaled Abalone data not found. Please run the preprocessing steps.")
-}
-```
 
 # K-DBSCAN Algorithm
 
@@ -534,6 +447,10 @@ k_dbscan <- function(D, k, max_iter, eps, minPts) {
 ```
 
 
+## Application on Simulated Data
+
+This section applies the K-DBSCAN algorithm to the synthetic data from earlier.
+
 ```{r}
 results_kdbscan <- k_dbscan(df_full[, c("X", "Y")], 10, 4, 0.12, 5)
 df_full$kdbs_cluster <- factor(results_kdbscan)
@@ -553,29 +470,212 @@ ggplot(df_full, aes(x = X, y = Y, color = kdbs_cluster)) +
 ```
 
 
-## Datasets Implementation
+# Comparison of DBSCAN and K-DBSCAN
 
+The authors noted the challenge of running these algorithms on large datasets, citing computational capacity as a limit. For our cases, to show if there's any improvement in DBSCAN compared to the K-DBSCAN algorithm, we rewrite our above implementations with some changes. To enable our computers to run the algorithms on larger datasets, we optimize some of the key calculations that were originally so intensive, that it was beyond our computer's computing power. In specific, the distance matrix calculations for each point gets unmanageable once we reach a dataset of higher than 10,000 points.
+
+Below are some re-wired versions of the coded algorithms. We use this to enable our computer to run the techniques, while still keeping the formulation of the algorithm the same.
+
+
+## Optimized Algorithms for Computation
 
 ```{r}
-# 1. Define Datasets and Parameters
-datasets <- list(
-  Abalone = abalone_features,
-  MAGIC   = magic_features,
-  Shuttle = shuttle_features,
-  MoCap   = mocap_features
-)
+find_uf <- function(parent, x) {
+  while (parent[x] != x) x <- parent[x]
+  return(x)
+}
+# swapped out your old flag/counter system in step 4 for a union-find approach.
+# makes merging the border clusters way cleaner without needing massive loops.
+union_uf <- function(parent, x, y) {
+  rx <- find_uf(parent, x)
+  ry <- find_uf(parent, y)
+  if (rx != ry) parent[rx] <- ry
+  return(parent)
+}
 
-params <- list(
-  Abalone = list(eps = 0.035, minPts = 4),
-  MAGIC   = list(eps = 0.06,  minPts = 4),
-  Shuttle = list(eps = 0.02,  minPts = 5),
-  MoCap   = list(eps = 0.007,  minPts = 4)
-)
+# added this to find the max reach (radius) of a cluster.
+# we use this later to skip distance checks for clusters that are physically far
+get_radius <- function(data_mat, center_vec) {
+  if (nrow(data_mat) == 0) return(0)
+  diffs <- sweep(data_mat, 2, center_vec, "-")
+  return(max(sqrt(rowSums(diffs^2))))
+}
+
+# this completely replaces single_link_dist and as.matrix(dist()).
+# uses a linear algebra trick: (A-B)^2 = A^2 + B^2 - 2AB to compute distances 
+# across matrices  without creating a giant N x N object that kills the RAM.
+fast_min_dist <- function(A, B) {
+  A <- as.matrix(A)
+  B <- as.matrix(B)
+  if (nrow(A) == 0 || nrow(B) == 0) return(Inf)
+  
+  D2 <- outer(rowSums(A^2), rowSums(B^2), "+") - 2 * tcrossprod(A, B)
+  D2[D2 < 0] <- 0 
+  return(sqrt(min(D2)))
+}
+
+manual_dbscan_opt <- function(D, eps, minPts) {
+  D <- as.matrix(D)
+  n <- nrow(D)
+  if (n == 0) return(integer(0))
+  
+  labels <- rep(0L, n)
+  cluster_id <- 0L
+  
+  # rather than calling dist() on everything upfront, we calculate distances 
+  # point-by-point. this is what actually prevents the 16GB memory crash 
+  # during the dbscan phase.
+  for (i in seq_len(n)) {
+    if (labels[i] != 0L) next
+    
+    diffs <- sweep(D, 2, D[i, ], "-")
+    dists <- sqrt(rowSums(diffs^2))
+    neighbors <- which(dists <= eps)
+    
+    if (length(neighbors) < minPts) {
+      labels[i] <- -1L
+    } else {
+      cluster_id <- cluster_id + 1L
+      labels[i] <- cluster_id
+      seeds <- setdiff(neighbors, i)
+      
+      while (length(seeds) > 0) {
+        cp <- seeds[1]
+        seeds <- seeds[-1]
+        
+        if (labels[cp] == -1L) labels[cp] <- cluster_id
+        if (labels[cp] != 0L) next
+        
+        labels[cp] <- cluster_id
+        diffs_seed <- sweep(D, 2, D[cp, ], "-")
+        dists_seed <- sqrt(rowSums(diffs_seed^2))
+        seed_neighbors <- which(dists_seed <= eps)
+        
+        if (length(seed_neighbors) >= minPts) {
+          new_seeds <- setdiff(seed_neighbors, c(seeds, i, cp))
+          if (length(new_seeds) > 0) seeds <- c(seeds, new_seeds)
+        }
+      }
+    }
+  }
+  return(labels)
+}
+
+k_dbscan_opt <- function(D, eps, minPts) {
+  D_mat <- as.matrix(scale(D))
+  n <- nrow(D_mat)
+  if (n < 2) return(rep(-1L, n))
+  
+  k <- max(1, min(floor(sqrt(n)), n - 1))
+  
+  # swapped your manual_kmeans_pp for the base stats package kmeans.
+  # running manual k-means in an interpreted loop was just adding unnecessary
+  # time overhead.
+  km <- suppressWarnings(kmeans(D_mat, centers = k, iter.max = 4))
+  group_id <- km$cluster
+  centers <- km$centers
+  
+  group_points <- vector("list", k)
+  numclu <- integer(k)
+  group_radii <- numeric(k)
+  sub_centers <- vector("list", k)
+  sub_radii <- vector("list", k)
+  
+  for (i in seq_len(k)) {
+    idx <- which(group_id == i)
+    if (length(idx) == 0) next
+    
+    group_data <- D_mat[idx, , drop = FALSE]
+    
+    # calculating the boundary radius for the whole k-means partition here to 
+    # prune checks later
+    group_radii[i] <- get_radius(group_data, centers[i, ])
+    
+    local_labels <- manual_dbscan_opt(group_data, eps, minPts)
+    u_labels <- sort(unique(local_labels[local_labels > 0]))
+    numclu[i] <- length(u_labels)
+    
+    group_points[[i]] <- lapply(u_labels, function(l) idx[local_labels == l])
+    sub_centers[[i]] <- lapply(group_points[[i]], function(p) colMeans(D_mat[p, , drop = FALSE]))
+    
+    # storing boundary radii for the internal sub-clusters too
+    sub_radii[[i]] <- mapply(function(p, ctr) get_radius(D_mat[p, , drop = FALSE], ctr), 
+                             group_points[[i]], sub_centers[[i]])
+  }
+
+  total_subclu <- sum(numclu)
+  if (total_subclu == 0) return(rep(-1L, n))
+  
+  parent <- seq_len(total_subclu)
+  
+  sub_id_map <- vector("list", k)
+  curr <- 0
+  for (g in seq_len(k)) { 
+    if(numclu[g] > 0) { 
+      sub_id_map[[g]] <- (curr + 1):(curr + numclu[g])
+      curr <- curr + numclu[g] 
+    } 
+  }
+  
+  # optimization: instead of checking every group against every other group,
+  # we only check groups whose maximum radii actually overlap.
+  g_dist <- as.matrix(dist(centers))
+  g_adj <- (g_dist - outer(group_radii, group_radii, "+")) <= eps
+  g_adj[lower.tri(g_adj, diag = TRUE)] <- FALSE
+  pairs <- which(g_adj, arr.ind = TRUE)
+  
+  if (nrow(pairs) > 0) {
+    for (idx in seq_len(nrow(pairs))) {
+      g1 <- pairs[idx, 1]
+      g2 <- pairs[idx, 2]
+      
+      for (c1 in seq_len(numclu[g1])) {
+        for (c2 in seq_len(numclu[g2])) {
+          d_dc <- sqrt(sum((sub_centers[[g1]][[c1]] - sub_centers[[g2]][[c2]])^2))
+          
+          # secondary prune: even if the k-means groups overlap, we only run the 
+          # expensive distance calculation if the specific sub-clusters inside them
+          # overlap too.
+          if ((d_dc - (sub_radii[[g1]][c1] + sub_radii[[g2]][c2])) <= eps) {
+            
+            # using the fast matrix math here instead of single_link_dist
+            if (fast_min_dist(D_mat[group_points[[g1]][[c1]], ], D_mat[group_points[[g2]][[c2]], ]) <= eps) {
+              parent <- union_uf(parent, sub_id_map[[g1]][c1], sub_id_map[[g2]][c2])
+            }
+            
+          }
+        }
+      }
+    }
+  }
+
+  # resolving final labels using the union-find structure instead of running a 
+  # completely new pass of manual_dbscan on flagged components.
+  roots <- unique(vapply(seq_len(total_subclu), find_uf, integer(1), parent = parent))
+  final_labels <- rep(-1L, n)
+  cid <- 0
+  
+  for (r in roots) {
+    pts <- unlist(lapply(seq_len(k), function(g) {
+      if(numclu[g] > 0) {
+        matches <- which(vapply(sub_id_map[[g]], find_uf, 1, parent=parent) == r)
+        if (length(matches) > 0) return(unlist(group_points[[g]][matches]))
+      }
+      return(NULL)
+    }))
+    
+    if (length(pts) > 0) { 
+      cid <- cid + 1
+      final_labels[pts] <- cid 
+    }
+  }
+  return(final_labels)
+}
 ```
 
 
 ```{r}
-# --- 1. Helper Functions ---
+#| eval: false
 find_uf <- function(parent, x) {
   while (parent[x] != x) x <- parent[x]
   return(x)
@@ -607,7 +707,7 @@ fast_min_dist <- function(A, B) {
 }
 
 # --- 2. Memory-Safe Manual DBSCAN (The O(N^2) Baseline) ---
-manual_dbscan_safe <- function(D, eps, minPts) {
+manual_dbscan_opt <- function(D, eps, minPts) {
   D <- as.matrix(D)
   n <- nrow(D)
   if (n == 0) return(integer(0))
@@ -676,7 +776,7 @@ k_dbscan_opt <- function(D, eps, minPts) {
     group_data <- D_mat[idx, , drop = FALSE]
     group_radii[i] <- get_radius(group_data, centers[i, ])
     
-    local_labels <- manual_dbscan_safe(group_data, eps, minPts)
+    local_labels <- manual_dbscan_opt(group_data, eps, minPts)
     u_labels <- sort(unique(local_labels[local_labels > 0]))
     numclu[i] <- length(u_labels)
     
@@ -747,102 +847,27 @@ k_dbscan_opt <- function(D, eps, minPts) {
 ```
 
 
-```{r}
-# --- 1. Simulation Setup ---
-test_sizes <- c(4000, 8000, 16000, 32000, 64000)
-eps_sim <- 0.15
-minPts_sim <- 5
-
-benchmark_results <- data.frame(
-  N = numeric(),
-  DBSCAN_Time = numeric(),
-  K_DBSCAN_Time = numeric()
-)
-
-# --- 2. The Benchmarking Loop ---
-for (n in test_sizes) {
-  cat("\nBenchmarking N =", n, "...\n")
-  
-  # Generate 4 distinct Gaussian blobs in 2D space
-  set.seed(42)
-  blob_centers <- matrix(c(-2,-2,  2,2,  -2,2,  2,-2), ncol = 2, byrow = TRUE)
-  points_per_blob <- floor(n / 4)
-  
-  data_list <- lapply(1:4, function(i) {
-    matrix(rnorm(points_per_blob * 2, mean = blob_centers[i,], sd = 0.4), ncol = 2)
-  })
-  
-  sim_data <- do.call(rbind, data_list)
-  # Standardize as expected by the algorithms
-  sim_data <- scale(sim_data) 
-  
-  # Benchmark Standard DBSCAN
-  cat("  Running Standard DBSCAN... ")
-  t_dbscan <- system.time({
-    res_db <- manual_dbscan_safe(sim_data, eps_sim, minPts_sim)
-  })
-  cat(round(t_dbscan["elapsed"], 3), "s\n")
-  
-  # Benchmark K-DBSCAN
-  cat("  Running K-DBSCAN... ")
-  t_kdbscan <- system.time({
-    res_kdb <- k_dbscan_opt(sim_data, eps_sim, minPts_sim)
-  })
-  cat(round(t_kdbscan["elapsed"], 3), "s\n")
-  
-  # Store results
-  benchmark_results <- rbind(benchmark_results, data.frame(
-    N = n,
-    DBSCAN_Time = t_dbscan["elapsed"],
-    K_DBSCAN_Time = t_kdbscan["elapsed"]
-  ))
-}
-
-# --- 3. Print Final Results ---
-cat("\nFinal Benchmark Results:\n")
-print(benchmark_results)
-```
+The optimized `k_dbscan''s results do not vastly differ from the original implementation from above.
 
 ```{r}
-#| fig-cap: Diagram for comparison of execution time in the proposed method, K-DBSCAN, and standard DBSCAN.
+results_kdbscan <- k_dbscan_opt(df_full[, c("X", "Y")], 0.12, 5)
+df_full$kdbs_cluster <- factor(results_kdbscan)
 
+real_clusters <- sort(unique(results_kdbscan[results_kdbscan > 0]))
 
-library(ggplot2)
-
-# 1. Reshape the data into a long format for ggplot
-df_lines <- data.frame(
-  N = rep(benchmark_results$N, 2),
-  Time = c(benchmark_results$DBSCAN_Time, benchmark_results$K_DBSCAN_Time),
-  Algorithm = factor(
-    rep(c("Standard DBSCAN", "K-DBSCAN"), each = nrow(benchmark_results)),
-    levels = c("Standard DBSCAN", "K-DBSCAN")
-  )
-)
-
-# 2. Create the plot
-ggplot(df_lines, aes(x = N, y = Time, color = Algorithm, shape = Algorithm)) +
-  geom_line(linewidth = 1) +
-  geom_point(size = 3) +
-  scale_color_manual(values = c("Standard DBSCAN" = "red", "K-DBSCAN" = "blue")) +
-  scale_shape_manual(values = c("Standard DBSCAN" = 16, "K-DBSCAN" = 17)) +
-  labs(
-    title = "Comparing Standard DBSCAN vs K-DBSCAN for Large Datasets",
-    x = "Number of Data Points (N)",
-    y = "Execution Time (Seconds)"
+ggplot(df_full, aes(x = X, y = Y, color = kdbs_cluster)) +
+  geom_point(size = 0.5, alpha = 0.7) +
+  scale_color_manual(
+    values = c("-1" = "grey70",
+               setNames(scales::hue_pal()(length(real_clusters)),
+                        as.character(real_clusters)))
   ) +
-  scale_x_continuous(limits = c(min(df_lines$N), max(df_lines$N))) +
-  scale_y_continuous(limits = c(0, max(df_lines$Time) * 1.1)) +
+  labs(title = "K-DBSCAN clustering", subtitle = "Grey = Noise (-1)") +
   theme_minimal() +
-  theme(
-    plot.title = element_text(face = "bold", size = 14),
-    legend.position = c(0.15, 0.85), # Positions legend in the top-left
-    legend.title = element_blank(),
-    legend.background = element_rect(fill = "white", color = NA),
-    panel.grid.major = element_line(color = "lightgray", linetype = "dotted")
-  )
+  theme(legend.position = "none")
 ```
 
-
+## Clustering Quality Metrics
 
 ```{r}
 library(cluster)     
@@ -880,260 +905,155 @@ evaluate_packaged_metrics <- function(data, labels, max_sample = 5000) {
 ```
 
 
-```{r}
-
-## nO NOISE
-test_sizes <- c(4000, 8000, 16000, 32000)
-eps_sim <- 0.15
-minPts_sim <- 5
-
-metrics_results <- data.frame(
-  N = numeric(),
-  DBSCAN_DB = numeric(),
-  DBSCAN_SI = numeric(),
-  K_DBSCAN_DB = numeric(),
-  K_DBSCAN_SI = numeric()
-)
-
-for (n in test_sizes) {
-  cat("\nEvaluating Metrics for N =", n, "...\n")
-  
-  # Generate simulated clusters
-  set.seed(42)
-  blob_centers <- matrix(c(-2,-2,  2,2,  -2,2,  2,-2), ncol = 2, byrow = TRUE)
-  points_per_blob <- floor(n / 4)
-  
-  data_list <- lapply(1:4, function(i) {
-    matrix(rnorm(points_per_blob * 2, mean = blob_centers[i,], sd = 0.4), ncol = 2)
-  })
-  sim_data <- scale(do.call(rbind, data_list))
-  
-  # Get cluster labels
-  res_db <- manual_dbscan_safe(sim_data, eps_sim, minPts_sim)
-  res_kdb <- k_dbscan_opt(sim_data, eps_sim, minPts_sim)
-  
-  # Evaluate metrics
-  metrics_db <- evaluate_packaged_metrics(sim_data, res_db)
-  metrics_kdb <- evaluate_packaged_metrics(sim_data, res_kdb)
-  
-  # Store results
-  metrics_results <- rbind(metrics_results, data.frame(
-    N = n,
-    DBSCAN_DB = metrics_db["DB"],
-    DBSCAN_SI = metrics_db["SI"],
-    K_DBSCAN_DB = metrics_kdb["DB"],
-    K_DBSCAN_SI = metrics_kdb["SI"]
-  ))
-}
-
-cat("\n========================================\n")
-cat("FINAL METRICS COMPARISON:\n")
-print(metrics_results)
-```
-
+## Executive Time and Quality Metrics
 
 ```{r}
-# --- 1. Define Sizes and Scaling Logic ---
-test_sizes <- c(4000, 8000, 16000, 32000)
+
+# --- 1. Simulation Parameters ---
+test_sizes <- c(4000, 8000, 16000, 32000, 64000)
 noise_ratio <- 0.10
+eps_sim <- 0.15
+minPts_sim <- 10 # Slightly higher to handle the 10% noise better
 
-# Helper to calculate the noise box limit based on N to keep density constant
-# Reference: N=4000 has limit=4. Area scales linearly with N.
-get_noise_limit <- function(n) {
-  return(4 * sqrt(n / 4000))
-}
+# Helper for constant noise density
+get_noise_limit <- function(n) { 4 * sqrt(n / 4000) }
 
-# --- 2. Generate the Data List ---
-datasets <- list()
+# Initialize storage
+results_master <- data.frame()
 
+# --- 2. The Integrated Loop ---
 for (n in test_sizes) {
-  set.seed(n) # Unique seed per size
+  cat("\n--- Processing N =", n, "---")
   
+  # A. Generate Noisy Data (Variable Space)
+  set.seed(n)
+  limit <- get_noise_limit(n)
   n_noise <- floor(n * noise_ratio)
   n_signal <- n - n_noise
   pts_per_blob <- floor(n_signal / 4)
   
-  # Signal: 4 Gaussian Blobs
   blob_centers <- matrix(c(-2,-2, 2,2, -2,2, 2,-2), ncol = 2, byrow = TRUE)
   signal_data <- do.call(rbind, lapply(1:4, function(i) {
     matrix(rnorm(pts_per_blob * 2, mean = blob_centers[i,], sd = 0.4), ncol = 2)
   }))
-  
-  # Noise: Adaptable Space (Expanding the box to keep density low)
-  limit <- get_noise_limit(n)
   noise_data <- matrix(runif(n_noise * 2, min = -limit, max = limit), ncol = 2)
   
-  # Combine, Shuffle, and Scale
-  full_data <- rbind(signal_data, noise_data)
-  full_data <- full_data[sample(nrow(full_data)), ]
+  sim_data <- scale(rbind(signal_data, noise_data))
+  sim_data <- sim_data[sample(nrow(sim_data)), ] # Shuffle
   
-  # Store in list with metadata
-  datasets[[paste0("N", n)]] <- list(
-    data = scale(full_data),
-    limit = limit,
-    n_noise = n_noise
-  )
-}
-```
-
-
-```{r}
-# Final storage for results
-final_metrics <- data.frame(
-  N = numeric(),
-  Noise_Limit = numeric(),
-  DBSCAN_DB = numeric(),
-  DBSCAN_SI = numeric(),
-  K_DBSCAN_DB = numeric(),
-  K_DBSCAN_SI = numeric()
-)
-
-# Shared Parameters
-eps_val <- 0.15
-minPts_val <- 10
-
-for (name in names(datasets)) {
-  # Extract data from our pre-generated list
-  obj <- datasets[[name]]
-  current_data <- obj$data
-  n_val <- nrow(current_data)
-  
-  cat("\nProcessing Dataset:", name, "| Noise Box Limit:", round(obj$limit, 2), "\n")
-  
-  # Run clustering (Assuming manual_dbscan_safe and k_dbscan_opt are loaded)
-  res_db <- manual_dbscan_safe(current_data, eps_val, minPts_val)
-  res_kdb <- k_dbscan_opt(current_data, eps_val, minPts_val)
-  
-  # Evaluate Quality (Filtering out -1 noise automatically)
-  m_db <- evaluate_packaged_metrics(current_data, res_db)
-  m_kdb <- evaluate_packaged_metrics(current_data, res_kdb)
-  
-  # Append to results table
-  final_metrics <- rbind(final_metrics, data.frame(
-    N = n_val,
-    Noise_Limit = obj$limit,
-    DBSCAN_DB = m_db["DB"],
-    DBSCAN_SI = m_db["SI"],
-    K_DBSCAN_DB = m_kdb["DB"],
-    K_DBSCAN_SI = m_kdb["SI"]
-  ))
-}
-
-cat("\n========================================\n")
-cat("CLEAN COMPARISON (CONSTANT NOISE DENSITY):\n")
-print(final_metrics)
-```
-
-
-
-```{r}
-test_sizes <- c(4000, 8000, 16000, 32000)
-eps_sim <- 0.15
-minPts_sim <- 5
-noise_ratio <- 0.10 # 10% of the data will be random noise
-
-metrics_results <- data.frame(
-  N = numeric(),
-  DBSCAN_DB = numeric(),
-  DBSCAN_SI = numeric(),
-  K_DBSCAN_DB = numeric(),
-  K_DBSCAN_SI = numeric()
-)
-
-for (n in test_sizes) {
-  cat("\nEvaluating Metrics for N =", n, "with 10% noise...\n")
-  
-  # 1. Calculate split between signal and noise
-  n_noise <- floor(n * noise_ratio)
-  n_signal <- n - n_noise
-  points_per_blob <- floor(n_signal / 4)
-  
-  # 2. Generate the 4 signal blobs (Gaussian)
-  set.seed(42)
-  blob_centers <- matrix(c(-2,-2,  2,2,  -2,2,  2,-2), ncol = 2, byrow = TRUE)
-  
-  data_list <- lapply(1:4, function(i) {
-    matrix(rnorm(points_per_blob * 2, mean = blob_centers[i,], sd = 0.4), ncol = 2)
+  # B. Benchmark & Run Standard DBSCAN
+  cat("\n  Running Standard DBSCAN... ")
+  t_db <- system.time({
+    res_db <- manual_dbscan_opt(sim_data, eps_sim, minPts_sim)
   })
-  signal_data <- do.call(rbind, data_list)
+  m_db <- evaluate_packaged_metrics(sim_data, res_db)
   
-  # 3. Generate the background noise (Uniform distribution across the blob bounding box)
-  noise_data <- matrix(runif(n_noise * 2, min = -4, max = 4), ncol = 2)
+  # C. Benchmark & Run K-DBSCAN
+  cat("Running K-DBSCAN... ")
+  t_kdb <- system.time({
+    res_kdb <- k_dbscan_opt(sim_data, eps_sim, minPts_sim)
+  })
+  m_kdb <- evaluate_packaged_metrics(sim_data, res_kdb)
   
-  # 4. Combine, shuffle, and scale
-  sim_data <- rbind(signal_data, noise_data)
-  sim_data <- sim_data[sample(nrow(sim_data)), ] # Shuffle rows randomly
-  sim_data <- scale(sim_data)
-  
-  # Run the clustering algorithms
-  res_db <- manual_dbscan_safe(sim_data, eps_sim, minPts_sim)
-  res_kdb <- k_dbscan_opt(sim_data, eps_sim, minPts_sim)
-  
-  # Evaluate metrics (our function automatically filters out the -1 noise labels)
-  metrics_db <- evaluate_packaged_metrics(sim_data, res_db)
-  metrics_kdb <- evaluate_packaged_metrics(sim_data, res_kdb)
-  
-  # Store results
-  metrics_results <- rbind(metrics_results, data.frame(
+  # D. Aggregate Results
+  row_data <- data.frame(
     N = n,
-    DBSCAN_DB = metrics_db["DB"],
-    DBSCAN_SI = metrics_db["SI"],
-    K_DBSCAN_DB = metrics_kdb["DB"],
-    K_DBSCAN_SI = metrics_kdb["SI"]
-  ))
+    DBSCAN_Time = t_db["elapsed"],
+    K_DBSCAN_Time = t_kdb["elapsed"],
+    DBSCAN_DB = m_db["DB"],
+    K_DBSCAN_DB = m_kdb["DB"],
+    DBSCAN_SI = m_db["SI"],
+    K_DBSCAN_SI = m_kdb["SI"]
+  )
+  results_master <- rbind(results_master, row_data)
 }
 
-cat("\n========================================\n")
-cat("FINAL METRICS COMPARISON (WITH NOISE):\n")
-print(metrics_results)
+# --- 3. Final Output ---
+cat("\n\n========================================================\n")
+cat("            FULL PERFORMANCE & QUALITY REPORT\n")
+cat("========================================================\n")
+print(results_master, row.names = FALSE)
+```
+
+
+
+## Visualizations
+
+```{r}
+#| fig-cap: Diagram for comparison of execution time in the proposed method, K-DBSCAN, and standard DBSCAN.
+
+df_lines <- data.frame(
+  N = rep(results_master$N, 2),
+  Time = c(results_master$DBSCAN_Time, results_master$K_DBSCAN_Time),
+  Algorithm = factor(
+    rep(c("Standard DBSCAN", "K-DBSCAN"), each = nrow(results_master)),
+    levels = c("Standard DBSCAN", "K-DBSCAN")
+  )
+)
+
+ggplot(df_lines, aes(x = N, y = Time, color = Algorithm, shape = Algorithm)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("Standard DBSCAN" = "firebrick", "K-DBSCAN" = "dodgerblue4")) +
+  scale_shape_manual(values = c("Standard DBSCAN" = 16, "K-DBSCAN" = 17)) +
+  labs(
+    title = "Comparing Standard DBSCAN vs K-DBSCAN for Large Datasets",
+    x = "Number of Data Points (N)",
+    y = "Execution Time (Seconds)"
+  ) +
+  scale_x_continuous(limits = c(min(df_lines$N), max(df_lines$N))) +
+  scale_y_continuous(limits = c(0, max(df_lines$Time) * 1.1)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    legend.position = c(0.15, 0.85), # Positions legend in the top-left
+    legend.title = element_blank(),
+    legend.background = element_rect(fill = "white", color = NA),
+    panel.grid.major = element_line(color = "lightgray", linetype = "dotted")
+  )
 ```
 
 
 
 
 
-
 ```{r}
-library(ggplot2)
 
-# --- 1. Prepare Data for Davies-Bouldin Plot ---
+# Davies-Bouldin Plot
 df_db <- data.frame(
-  N = rep(metrics_results$N, 2),
-  Algorithm = rep(c("Standard DBSCAN", "K-DBSCAN"), each = nrow(metrics_results)),
-  Score = c(metrics_results$DBSCAN_DB, metrics_results$K_DBSCAN_DB)
+  N = rep(results_master$N, 2),
+  Algorithm = rep(c("Standard DBSCAN", "K-DBSCAN"), each = nrow(results_master)),
+  Score = c(results_master$DBSCAN_DB, results_master$K_DBSCAN_DB)
 )
 
-# Plot Davies-Bouldin
 plot_db <- ggplot(df_db, aes(x = factor(N), y = Score, fill = Algorithm)) +
   geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7, color="black") +
-  scale_fill_manual(values = c("Standard DBSCAN" = "#F8766D", "K-DBSCAN" = "#00BFC4")) +
+  scale_fill_manual(values = c("Standard DBSCAN" = "firebrick", "K-DBSCAN" = "dodgerblue4")) +
   labs(title = "Davies-Bouldin Quality Comparison",
-       subtitle = "Lower values indicate better clustering separation",
        x = "Number of Data Points (N)",
        y = "Davies-Bouldin Index") +
   theme_minimal() +
   theme(plot.title = element_text(face = "bold", size = 14),
-        legend.position = "bottom",
+        legend.position = "top",
         legend.title = element_blank())
 
-# --- 2. Prepare Data for Silhouette Plot ---
+# Silhouette Plot
 df_si <- data.frame(
-  N = rep(metrics_results$N, 2),
-  Algorithm = rep(c("Standard DBSCAN", "K-DBSCAN"), each = nrow(metrics_results)),
-  Score = c(metrics_results$DBSCAN_SI, metrics_results$K_DBSCAN_SI)
+  N = rep(results_master$N, 2),
+  Algorithm = rep(c("Standard DBSCAN", "K-DBSCAN"), each = nrow(results_master)),
+  Score = c(results_master$DBSCAN_SI, results_master$K_DBSCAN_SI)
 )
 
 # Plot Silhouette
 plot_si <- ggplot(df_si, aes(x = factor(N), y = Score, fill = Algorithm)) +
   geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7, color="black") +
-  scale_fill_manual(values = c("Standard DBSCAN" = "#F8766D", "K-DBSCAN" = "#00BFC4")) +
+  scale_fill_manual(values = c("Standard DBSCAN" = "firebrick", "K-DBSCAN" = "dodgerblue4")) +
   labs(title = "Silhouette Quality Comparison",
-       subtitle = "Values closer to 1 indicate better clustering cohesion",
        x = "Number of Data Points (N)",
        y = "Silhouette Index") +
   theme_minimal() +
   theme(plot.title = element_text(face = "bold", size = 14),
-        legend.position = "bottom",
+        legend.position = "top",
         legend.title = element_blank())
 
 # Print the plots to your viewer
