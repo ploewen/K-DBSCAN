@@ -3,13 +3,15 @@ title: "Analysis of the DBSCAN and K-DBSCAN Algorithms"
 author: Philip Loewen, Arusan Surendiran
 abstract: |
   This report provides fully reproducible code for the DBSCAN and K-DBSCAN analysis. It includes the manual implementations of the algorithms, how the simulated datasets were created, and the comparisons for execution time and clustering quality (DB and SI metrics). The document includes all figures and tables used in the final report.
-format: pdf
+format:
+  pdf:
+    toc: true
+number-sections: true
 ---
 
 # DBSCAN Algorithm
 
 This section defines the manual implementation of the DBSCAN algorithm. It utilizes a [queue in data structure](https://www.geeksforgeeks.org/dsa/basic-operations-for-queue-in-data-structure/) and a pairwise distance matrix to handle cluster expansion efficiently in R.
-
 
 ```{r}
 manual_dbscan <- function(data, eps, minPts) {
@@ -85,7 +87,6 @@ manual_dbscan <- function(data, eps, minPts) {
 }
 ```
 
-
 # Simulation of Datasets
 
 The simulation evaluates the algorithm's performance on non-linear geometries (sine curves, rings, and arcs) and its ability to distinguish clusters from background noise (Kuchciak, 2024). We demonstrate the advantages of DBSCAN clustering in comparison to k-means clustering.
@@ -140,7 +141,6 @@ df_full <- as.data.frame(data_full)
 colnames(df_full) <- c("X", "Y")
 ```
 
-
 ## Execution and Comparison
 
 ```{r}
@@ -151,13 +151,11 @@ results_dbscan <- manual_dbscan(df_full, eps = 2.5, minPts = 4)
 df_full$Cluster <- as.factor(results_dbscan)
 ```
 
-
 ```{r}
 # Run K-means for Comparison
 km_result <- kmeans(df_full, centers = 10, nstart = 25)
 df_full$Kmeans_Cluster <- as.factor(km_result$cluster)
 ```
-
 
 ## Visualization
 
@@ -185,8 +183,6 @@ ggplot(df_full, aes(x = X, y = Y, color = Kmeans_Cluster)) +
 ```
 
 The comparison above highlights the advantages of DBSCAN. It identified clusters of arbitrary shape and isolated noise points. In contrast, standard K-means forces noise into the nearest cluster, distorting the centroids and the overall structure of the data. K-means also notably did not pick up the shape of the elliptical ring around the other clusters.
-
-
 
 # K-means++ Algorithm
 
@@ -289,10 +285,9 @@ ggplot(df_full, aes(x = X, y = Y, color = Kmpp_Cluster)) +
   theme(legend.position = "none")
 ```
 
-
 # K-DBSCAN Algorithm
 
-The primary goal of the K-DBSCAN hybrid approach is to process data in localized segments and then unify density-connected clusters that cross the boundaries of those segments. By partitioning the space with K-means, the algorithm only performs exhaustive distance checks between points within the same group or between adjacent groups. 
+The primary goal of the K-DBSCAN hybrid approach is to process data in localized segments and then unify density-connected clusters that cross the boundaries of those segments. By partitioning the space with K-means, the algorithm only performs exhaustive distance checks between points within the same group or between adjacent groups.
 
 ## Implementation
 
@@ -446,7 +441,6 @@ k_dbscan <- function(D, k, max_iter, eps, minPts) {
 }
 ```
 
-
 ## Application on Simulated Data
 
 This section applies the K-DBSCAN algorithm to the synthetic data from earlier.
@@ -469,13 +463,11 @@ ggplot(df_full, aes(x = X, y = Y, color = kdbs_cluster)) +
   theme(legend.position = "none")
 ```
 
-
 # Comparison of DBSCAN and K-DBSCAN
 
 The authors noted the challenge of running these algorithms on large datasets, citing computational capacity as a limit. For our cases, to show if there's any improvement in DBSCAN compared to the K-DBSCAN algorithm, we rewrite our above implementations with some changes. To enable our computers to run the algorithms on larger datasets, we optimize some of the key calculations that were originally so intensive, that it was beyond our computer's computing power. In specific, the distance matrix calculations for each point gets unmanageable once we reach a dataset of higher than 10,000 points.
 
 Below are some re-wired versions of the coded algorithms. We use this to enable our computer to run the techniques, while still keeping the formulation of the algorithm the same.
-
 
 ## Optimized Algorithms for Computation
 
@@ -673,7 +665,6 @@ k_dbscan_opt <- function(D, eps, minPts) {
 }
 ```
 
-
 ```{r}
 #| eval: false
 find_uf <- function(parent, x) {
@@ -846,8 +837,7 @@ k_dbscan_opt <- function(D, eps, minPts) {
 }
 ```
 
-
-The optimized `k_dbscan''s results do not vastly differ from the original implementation from above.
+The optimized \`k_dbscan''s results do not vastly differ from the original implementation from above.
 
 ```{r}
 results_kdbscan <- k_dbscan_opt(df_full[, c("X", "Y")], 0.12, 5)
@@ -904,12 +894,14 @@ evaluate_packaged_metrics <- function(data, labels, max_sample = 5000) {
 }
 ```
 
+## Simulation and Performance Evaluation
 
-## Executive Time and Quality Metrics
+The following creates a simulation by generating the progressively larger datasets and executing both algorithms under identical parameters. It then aggregates the elapsed execution times alongside the Davies-Bouldin and Silhouette quality metrics.
 
 ```{r}
+#| cache: true
 
-# --- 1. Simulation Parameters ---
+# Simulation Parameters
 test_sizes <- c(4000, 8000, 16000, 32000, 64000)
 noise_ratio <- 0.10
 eps_sim <- 0.15
@@ -918,14 +910,14 @@ minPts_sim <- 10 # Slightly higher to handle the 10% noise better
 # Helper for constant noise density
 get_noise_limit <- function(n) { 4 * sqrt(n / 4000) }
 
-# Initialize storage
+
 results_master <- data.frame()
 
-# --- 2. The Integrated Loop ---
+# Integrated Loop
 for (n in test_sizes) {
-  cat("\n--- Processing N =", n, "---")
+  cat("Processing N =", n, "---")
   
-  # A. Generate Noisy Data (Variable Space)
+  # Generate Data
   set.seed(n)
   limit <- get_noise_limit(n)
   n_noise <- floor(n * noise_ratio)
@@ -941,21 +933,20 @@ for (n in test_sizes) {
   sim_data <- scale(rbind(signal_data, noise_data))
   sim_data <- sim_data[sample(nrow(sim_data)), ] # Shuffle
   
-  # B. Benchmark & Run Standard DBSCAN
+  # Benchmark & Run Standard DBSCAN
   cat("\n  Running Standard DBSCAN... ")
   t_db <- system.time({
     res_db <- manual_dbscan_opt(sim_data, eps_sim, minPts_sim)
   })
   m_db <- evaluate_packaged_metrics(sim_data, res_db)
   
-  # C. Benchmark & Run K-DBSCAN
+  # Benchmark & Run K-DBSCAN
   cat("Running K-DBSCAN... ")
   t_kdb <- system.time({
     res_kdb <- k_dbscan_opt(sim_data, eps_sim, minPts_sim)
   })
   m_kdb <- evaluate_packaged_metrics(sim_data, res_kdb)
   
-  # D. Aggregate Results
   row_data <- data.frame(
     N = n,
     DBSCAN_Time = t_db["elapsed"],
@@ -968,11 +959,32 @@ for (n in test_sizes) {
   results_master <- rbind(results_master, row_data)
 }
 
-# --- 3. Final Output ---
-cat("\n\n========================================================\n")
-cat("            FULL PERFORMANCE & QUALITY REPORT\n")
-cat("========================================================\n")
+cat("EXECUTION PERFORMANCE & CLUSTER QUALITY REPORT\n")
 print(results_master, row.names = FALSE)
+```
+
+
+```{r}
+library(knitr)
+library(kableExtra)
+
+# Create a data frame for the parameters
+params_df <- data.frame(
+  Parameter = c("Test Sizes (N)", "Epsilon (eps)", "Min. Points (minPts)"),
+  Value = c("4000, 8000, 16000, 32000, 64000", "0.15", "10"),
+  Description = c("Number of data points in each simulation", 
+                  "Reachability distance for DBSCAN", 
+                  "Minimum cluster density threshold")
+)
+
+params_df |>
+  kable(booktabs = TRUE, caption = "Simulation Parameters for Performance Benchmarking") |>
+  kable_styling(
+    bootstrap_options = "striped",                 
+    latex_options = c("striped", "hold_position"),
+    full_width = FALSE
+  ) |>
+  column_spec(1, bold = TRUE)
 ```
 
 
@@ -1013,12 +1025,7 @@ ggplot(df_lines, aes(x = N, y = Time, color = Algorithm, shape = Algorithm)) +
   )
 ```
 
-
-
-
-
 ```{r}
-
 # Davies-Bouldin Plot
 df_db <- data.frame(
   N = rep(results_master$N, 2),
@@ -1056,15 +1063,6 @@ plot_si <- ggplot(df_si, aes(x = factor(N), y = Score, fill = Algorithm)) +
         legend.position = "top",
         legend.title = element_blank())
 
-# Print the plots to your viewer
-print(plot_db)
-print(plot_si)
+plot_db
+plot_si
 ```
-
-
-
-
-
-
-
-

@@ -1,13 +1,8 @@
-base
-methods
-utils
-datasets
-grDevices
-graphics
-stats
 remotes
 ucimlrepo
 here
 dbscan
 ggplot2
 MASS
+cluster
+clusterSim
