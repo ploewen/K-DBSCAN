@@ -171,15 +171,17 @@ ggplot(df_full, aes(x = X, y = Y, color = Cluster)) +
   geom_point(alpha = 0.6, size = 0.8) +
   scale_color_manual(values = db_palette) +
   theme_minimal() +
-  labs(title = "Manual DBSCAN", subtitle = "Grey = Noise (-1)") +
+  labs(title = "Manual DBSCAN Clustering", subtitle = "Grey = Noise (-1)") +
   theme(legend.position = "none")
 
 # K-means Results
 ggplot(df_full, aes(x = X, y = Y, color = Kmeans_Cluster)) +
   geom_point(alpha = 0.5, size = 0.8) +
   theme_minimal() +
-  labs(title = "K-means Comparison", subtitle = "Note: Noise forced into clusters") +
+  labs(title = "K-means Clustering", subtitle = "Note: Noise forced into clusters") +
   theme(legend.position = "none")
+
+
 ```
 
 The comparison above highlights the advantages of DBSCAN. It identified clusters of arbitrary shape and isolated noise points. In contrast, standard K-means forces noise into the nearest cluster, distorting the centroids and the overall structure of the data. K-means also notably did not pick up the shape of the elliptical ring around the other clusters.
