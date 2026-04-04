@@ -153,7 +153,7 @@ df_full$Cluster <- as.factor(results_dbscan)
 
 ```{r}
 # Run K-means for Comparison
-km_result <- kmeans(df_full, centers = 10, nstart = 25)
+km_result <- kmeans(df_full, centers = 9, nstart = 25)
 df_full$Kmeans_Cluster <- as.factor(km_result$cluster)
 ```
 
@@ -207,7 +207,7 @@ manual_kmeans_pp <- function(data, k, max_iter = 100) {
   data_mat <- as.matrix(data)
   n <- nrow(data_mat)
   
-  # --- Step 1: K-means++ Seeding ---
+  # Step 1: K-means++ Seeding
   
   # Choose the first center uniformly at random
   centers <- matrix(NA, nrow = k, ncol = ncol(data_mat))
@@ -226,7 +226,7 @@ manual_kmeans_pp <- function(data, k, max_iter = 100) {
     }
   }
   
-  # --- Step 2: Standard K-means Iteration ---
+  # Step 2: Standard K-means Iteration
   
   assignments <- rep(0, n)
   prev_assignments <- rep(-1, n)
@@ -263,8 +263,8 @@ We reuse the previous synthetic dataset to evaluate how effectively k-means++ id
 
 set.seed(2201)
 # Run Manual K-means++
-# We choose k=10 to match the number of intended clusters in the generation
-k_clusters <- 10
+# We choose k=9 to match the number of intended clusters in the generation
+k_clusters <- 9
 results_kmpp <- manual_kmeans_pp(df_full[, c("X", "Y")], k = k_clusters)
 df_full$Kmpp_Cluster <- as.factor(results_kmpp$cluster)
 
@@ -274,16 +274,14 @@ colnames(centers_df) <- c("X", "Y")
 
 ## Visualization
 
-The plot below displays the final cluster assignments. The larger black points represent the final centroids calculated by the algorithm.
+The plot below displays the final cluster assignments.
 
 ```{r}
 # Kmpp-means Results
 ggplot(df_full, aes(x = X, y = Y, color = Kmpp_Cluster)) +
   geom_point(alpha = 0.5, size = 0.8) +
-  geom_point(data = centers_df, aes(x = X, y = Y), 
-             color = "black", size = 3) +
   theme_minimal() +
-  labs(title = "K-means++ Comparison", subtitle = "Note: Noise forced into clusters") +
+  labs(title = "K-means++ Clustering", subtitle = "Note: Noise forced into clusters") +
   theme(legend.position = "none")
 ```
 
@@ -448,7 +446,7 @@ k_dbscan <- function(D, k, max_iter, eps, minPts) {
 This section applies the K-DBSCAN algorithm to the synthetic data from earlier.
 
 ```{r}
-results_kdbscan <- k_dbscan(df_full[, c("X", "Y")], 10, 4, 0.12, 5)
+results_kdbscan <- k_dbscan(df_full[, c("X", "Y")], 10, 4, 0.13, 6)
 df_full$kdbs_cluster <- factor(results_kdbscan)
 
 real_clusters <- sort(unique(results_kdbscan[results_kdbscan > 0]))
@@ -478,8 +476,7 @@ find_uf <- function(parent, x) {
   while (parent[x] != x) x <- parent[x]
   return(x)
 }
-# swapped out your old flag/counter system in step 4 for a union-find approach.
-# makes merging the border clusters way cleaner without needing massive loops.
+# Imporved Union Find methodology
 union_uf <- function(parent, x, y) {
   rx <- find_uf(parent, x)
   ry <- find_uf(parent, y)
@@ -487,17 +484,15 @@ union_uf <- function(parent, x, y) {
   return(parent)
 }
 
-# added this to find the max reach (radius) of a cluster.
-# we use this later to skip distance checks for clusters that are physically far
+# find the max reach (radius) of a cluster
 get_radius <- function(data_mat, center_vec) {
   if (nrow(data_mat) == 0) return(0)
   diffs <- sweep(data_mat, 2, center_vec, "-")
   return(max(sqrt(rowSums(diffs^2))))
 }
 
-# this completely replaces single_link_dist and as.matrix(dist()).
-# uses a linear algebra trick: (A-B)^2 = A^2 + B^2 - 2AB to compute distances 
-# across matrices  without creating a giant N x N object that kills the RAM.
+# completely replaces single_link_dist and as.matrix(dist()).
+# uses a linear algebra trick: (A-B)^2 = A^2 + B^2 - 2AB to compute distances
 fast_min_dist <- function(A, B) {
   A <- as.matrix(A)
   B <- as.matrix(B)
@@ -517,8 +512,7 @@ manual_dbscan_opt <- function(D, eps, minPts) {
   cluster_id <- 0L
   
   # rather than calling dist() on everything upfront, we calculate distances 
-  # point-by-point. this is what actually prevents the 16GB memory crash 
-  # during the dbscan phase.
+  # point-by-point
   for (i in seq_len(n)) {
     if (labels[i] != 0L) next
     
@@ -562,9 +556,7 @@ k_dbscan_opt <- function(D, eps, minPts) {
   
   k <- max(1, min(floor(sqrt(n)), n - 1))
   
-  # swapped your manual_kmeans_pp for the base stats package kmeans.
-  # running manual k-means in an interpreted loop was just adding unnecessary
-  # time overhead.
+  # use packaged k-means
   km <- suppressWarnings(kmeans(D_mat, centers = k, iter.max = 4))
   group_id <- km$cluster
   centers <- km$centers
@@ -581,8 +573,7 @@ k_dbscan_opt <- function(D, eps, minPts) {
     
     group_data <- D_mat[idx, , drop = FALSE]
     
-    # calculating the boundary radius for the whole k-means partition here to 
-    # prune checks later
+    # calculating the boundary radius for the whole k-means partition
     group_radii[i] <- get_radius(group_data, centers[i, ])
     
     local_labels <- manual_dbscan_opt(group_data, eps, minPts)
@@ -592,7 +583,7 @@ k_dbscan_opt <- function(D, eps, minPts) {
     group_points[[i]] <- lapply(u_labels, function(l) idx[local_labels == l])
     sub_centers[[i]] <- lapply(group_points[[i]], function(p) colMeans(D_mat[p, , drop = FALSE]))
     
-    # storing boundary radii for the internal sub-clusters too
+    # storing boundary radii for the internal sub-clusters
     sub_radii[[i]] <- mapply(function(p, ctr) get_radius(D_mat[p, , drop = FALSE], ctr), 
                              group_points[[i]], sub_centers[[i]])
   }
@@ -611,7 +602,7 @@ k_dbscan_opt <- function(D, eps, minPts) {
     } 
   }
   
-  # optimization: instead of checking every group against every other group,
+  # instead of checking every group against every other group,
   # we only check groups whose maximum radii actually overlap.
   g_dist <- as.matrix(dist(centers))
   g_adj <- (g_dist - outer(group_radii, group_radii, "+")) <= eps
@@ -627,12 +618,11 @@ k_dbscan_opt <- function(D, eps, minPts) {
         for (c2 in seq_len(numclu[g2])) {
           d_dc <- sqrt(sum((sub_centers[[g1]][[c1]] - sub_centers[[g2]][[c2]])^2))
           
-          # secondary prune: even if the k-means groups overlap, we only run the 
-          # expensive distance calculation if the specific sub-clusters inside them
-          # overlap too.
+          # even if the k-means groups overlap, we only run the  distance calculation 
+          # if the specific sub-clusters inside them overlap too.
           if ((d_dc - (sub_radii[[g1]][c1] + sub_radii[[g2]][c2])) <= eps) {
             
-            # using the fast matrix math here instead of single_link_dist
+            # using the matrix computation instead of single_link_dist
             if (fast_min_dist(D_mat[group_points[[g1]][[c1]], ], D_mat[group_points[[g2]][[c2]], ]) <= eps) {
               parent <- union_uf(parent, sub_id_map[[g1]][c1], sub_id_map[[g2]][c2])
             }
@@ -645,178 +635,6 @@ k_dbscan_opt <- function(D, eps, minPts) {
 
   # resolving final labels using the union-find structure instead of running a 
   # completely new pass of manual_dbscan on flagged components.
-  roots <- unique(vapply(seq_len(total_subclu), find_uf, integer(1), parent = parent))
-  final_labels <- rep(-1L, n)
-  cid <- 0
-  
-  for (r in roots) {
-    pts <- unlist(lapply(seq_len(k), function(g) {
-      if(numclu[g] > 0) {
-        matches <- which(vapply(sub_id_map[[g]], find_uf, 1, parent=parent) == r)
-        if (length(matches) > 0) return(unlist(group_points[[g]][matches]))
-      }
-      return(NULL)
-    }))
-    
-    if (length(pts) > 0) { 
-      cid <- cid + 1
-      final_labels[pts] <- cid 
-    }
-  }
-  return(final_labels)
-}
-```
-
-```{r}
-#| eval: false
-find_uf <- function(parent, x) {
-  while (parent[x] != x) x <- parent[x]
-  return(x)
-}
-
-union_uf <- function(parent, x, y) {
-  rx <- find_uf(parent, x)
-  ry <- find_uf(parent, y)
-  if (rx != ry) parent[rx] <- ry
-  return(parent)
-}
-
-# Safely calculate the max distance from a center (cluster radius)
-get_radius <- function(data_mat, center_vec) {
-  if (nrow(data_mat) == 0) return(0)
-  diffs <- sweep(data_mat, 2, center_vec, "-")
-  return(max(sqrt(rowSums(diffs^2))))
-}
-
-# Fast cross-distance using linear algebra to avoid R loops
-fast_min_dist <- function(A, B) {
-  A <- as.matrix(A)
-  B <- as.matrix(B)
-  if (nrow(A) == 0 || nrow(B) == 0) return(Inf)
-  
-  D2 <- outer(rowSums(A^2), rowSums(B^2), "+") - 2 * tcrossprod(A, B)
-  D2[D2 < 0] <- 0 
-  return(sqrt(min(D2)))
-}
-
-# --- 2. Memory-Safe Manual DBSCAN (The O(N^2) Baseline) ---
-manual_dbscan_opt <- function(D, eps, minPts) {
-  D <- as.matrix(D)
-  n <- nrow(D)
-  if (n == 0) return(integer(0))
-  
-  labels <- rep(0L, n)
-  cluster_id <- 0L
-  
-  for (i in seq_len(n)) {
-    if (labels[i] != 0L) next
-    
-    diffs <- sweep(D, 2, D[i, ], "-")
-    dists <- sqrt(rowSums(diffs^2))
-    neighbors <- which(dists <= eps)
-    
-    if (length(neighbors) < minPts) {
-      labels[i] <- -1L
-    } else {
-      cluster_id <- cluster_id + 1L
-      labels[i] <- cluster_id
-      seeds <- setdiff(neighbors, i)
-      
-      while (length(seeds) > 0) {
-        cp <- seeds[1]
-        seeds <- seeds[-1]
-        
-        if (labels[cp] == -1L) labels[cp] <- cluster_id
-        if (labels[cp] != 0L) next
-        
-        labels[cp] <- cluster_id
-        diffs_seed <- sweep(D, 2, D[cp, ], "-")
-        dists_seed <- sqrt(rowSums(diffs_seed^2))
-        seed_neighbors <- which(dists_seed <= eps)
-        
-        if (length(seed_neighbors) >= minPts) {
-          new_seeds <- setdiff(seed_neighbors, c(seeds, i, cp))
-          if (length(new_seeds) > 0) seeds <- c(seeds, new_seeds)
-        }
-      }
-    }
-  }
-  return(labels)
-}
-
-# --- 3. Optimized K-DBSCAN ---
-k_dbscan_opt <- function(D, eps, minPts) {
-  D_mat <- as.matrix(scale(D))
-  n <- nrow(D_mat)
-  if (n < 2) return(rep(-1L, n))
-  
-  k <- max(1, min(floor(sqrt(n)), n - 1))
-  
-  km <- suppressWarnings(kmeans(D_mat, centers = k, iter.max = 4))
-  group_id <- km$cluster
-  centers <- km$centers
-  
-  group_points <- vector("list", k)
-  numclu <- integer(k)
-  group_radii <- numeric(k)
-  sub_centers <- vector("list", k)
-  sub_radii <- vector("list", k)
-  
-  for (i in seq_len(k)) {
-    idx <- which(group_id == i)
-    if (length(idx) == 0) next
-    
-    group_data <- D_mat[idx, , drop = FALSE]
-    group_radii[i] <- get_radius(group_data, centers[i, ])
-    
-    local_labels <- manual_dbscan_opt(group_data, eps, minPts)
-    u_labels <- sort(unique(local_labels[local_labels > 0]))
-    numclu[i] <- length(u_labels)
-    
-    group_points[[i]] <- lapply(u_labels, function(l) idx[local_labels == l])
-    sub_centers[[i]] <- lapply(group_points[[i]], function(p) colMeans(D_mat[p, , drop = FALSE]))
-    sub_radii[[i]] <- mapply(function(p, ctr) get_radius(D_mat[p, , drop = FALSE], ctr), 
-                             group_points[[i]], sub_centers[[i]])
-  }
-
-  total_subclu <- sum(numclu)
-  if (total_subclu == 0) return(rep(-1L, n))
-  parent <- seq_len(total_subclu)
-  
-  sub_id_map <- vector("list", k)
-  curr <- 0
-  for (g in seq_len(k)) { 
-    if(numclu[g] > 0) { 
-      sub_id_map[[g]] <- (curr + 1):(curr + numclu[g])
-      curr <- curr + numclu[g] 
-    } 
-  }
-  
-  g_dist <- as.matrix(dist(centers))
-  g_adj <- (g_dist - outer(group_radii, group_radii, "+")) <= eps
-  g_adj[lower.tri(g_adj, diag = TRUE)] <- FALSE
-  pairs <- which(g_adj, arr.ind = TRUE)
-  
-  if (nrow(pairs) > 0) {
-    for (idx in seq_len(nrow(pairs))) {
-      g1 <- pairs[idx, 1]
-      g2 <- pairs[idx, 2]
-      
-      for (c1 in seq_len(numclu[g1])) {
-        for (c2 in seq_len(numclu[g2])) {
-          d_dc <- sqrt(sum((sub_centers[[g1]][[c1]] - sub_centers[[g2]][[c2]])^2))
-          if ((d_dc - (sub_radii[[g1]][c1] + sub_radii[[g2]][c2])) <= eps) {
-            
-            if (fast_min_dist(D_mat[group_points[[g1]][[c1]], ], D_mat[group_points[[g2]][[c2]], ]) <= eps) {
-              parent <- union_uf(parent, sub_id_map[[g1]][c1], sub_id_map[[g2]][c2])
-            }
-            
-          }
-        }
-      }
-    }
-  }
-
   roots <- unique(vapply(seq_len(total_subclu), find_uf, integer(1), parent = parent))
   final_labels <- rep(-1L, n)
   cid <- 0
@@ -866,7 +684,7 @@ library(cluster)
 library(clusterSim)  
 
 evaluate_packaged_metrics <- function(data, labels, max_sample = 5000) {
-  # 1. Filter out noise points (-1) and unassigned points (0)
+  # Filter out noise points (-1) and unassigned points (0)
   valid_idx <- labels > 0
   
   if (sum(valid_idx) == 0 || length(unique(labels[valid_idx])) < 2) {
@@ -876,11 +694,11 @@ evaluate_packaged_metrics <- function(data, labels, max_sample = 5000) {
   data_c <- data[valid_idx, , drop = FALSE]
   labels_c <- labels[valid_idx]
   
-  # 2. Davies-Bouldin Index (FIXED: parameter is 'centrotypes')
+  # Davies-Bouldin Index (FIXED: parameter is 'centrotypes')
   db_res <- index.DB(data_c, as.integer(labels_c), centrotypes = "centroids")
   db_val <- db_res$DB
   
-  # 3. Silhouette Index (Sampled for memory safety)
+  # Silhouette Index (Sampled for memory safety)
   if (nrow(data_c) > max_sample) {
     set.seed(42)
     sample_idx <- sample(seq_len(nrow(data_c)), max_sample)
@@ -907,7 +725,7 @@ The following creates a simulation by generating the progressively larger datase
 test_sizes <- c(4000, 8000, 16000, 32000, 64000)
 noise_ratio <- 0.10
 eps_sim <- 0.15
-minPts_sim <- 10 # Slightly higher to handle the 10% noise better
+minPts_sim <- 10
 
 # Helper for constant noise density
 get_noise_limit <- function(n) { 4 * sqrt(n / 4000) }
@@ -915,7 +733,6 @@ get_noise_limit <- function(n) { 4 * sqrt(n / 4000) }
 
 results_master <- data.frame()
 
-# Integrated Loop
 for (n in test_sizes) {
   cat("Processing N =", n, "---")
   
